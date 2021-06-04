@@ -4,6 +4,7 @@ import math
 import numpy as np
 import torch
 import torch.optim as optim
+import os.path as osp
 
 
 class TwoCropTransform:
@@ -13,6 +14,26 @@ class TwoCropTransform:
 
     def __call__(self, x):
         return [self.transform(x), self.transform(x)]
+
+def load_image_names(data_dir, util_rate, opt):
+        imageset_dir = osp.join(data_dir, 'imageset/single_image.2class/fold.5-5/ratio/100%')
+
+        with open(osp.join(imageset_dir, 'train.{}-{}.txt'.format(opt.test_fold, opt.val_fold)), 'r') as fid:
+            temp = fid.read()
+        train_names = temp.split('\n')[:-1]
+        with open(osp.join(imageset_dir, 'validation.{}-{}.txt'.format(opt.test_fold, opt.val_fold)), 'r') as fid:
+            temp = fid.read()
+        val_names = temp.split('\n')[:-1]
+        with open(osp.join(imageset_dir, 'test.{}.txt'.format(opt.test_fold)), 'r') as fid:
+            temp = fid.read()
+        test_names = temp.split('\n')[:-1]
+        
+        if util_rate < 1:
+            num_used = int(len(train_names) * util_rate)
+            np.random.seed(1)
+            train_names = np.random.choice(train_names, size=num_used, replace=False)
+
+        return train_names, val_names, test_names
 
 
 class AverageMeter(object):
@@ -76,10 +97,18 @@ def warmup_learning_rate(args, epoch, batch_id, total_batches, optimizer):
 
 
 def set_optimizer(opt, model):
-    optimizer = optim.SGD(model.parameters(),
-                          lr=opt.learning_rate,
-                          momentum=opt.momentum,
-                          weight_decay=opt.weight_decay)
+    if opt.optimizer == 'ADAM':
+        optimizer = optim.Adam(model.parameters(),
+                            lr=opt.learning_rate,
+                            weight_decay=opt.weight_decay)
+    
+    elif opt.optimizer == 'SGD':
+        optimizer = optim.SGD(model.parameters(),
+                            lr=opt.learning_rate,
+                            momentum=opt.momentum,
+                            weight_decay=opt.weight_decay)
+    else:
+        raise ValueError("Not supported optimizer")
     return optimizer
 
 
