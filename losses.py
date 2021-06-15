@@ -42,16 +42,16 @@ class SupConLoss(nn.Module):
             features = features.view(features.shape[0], features.shape[1], -1)
 
         batch_size = features.shape[0]
-        if labels is not None and mask is not None:
+        if labels is not None and mask is not None: # 1 1
             raise ValueError('Cannot define both `labels` and `mask`')
-        elif labels is None and mask is None:
+        elif labels is None and mask is None: # 0 0, unsupervised
             mask = torch.eye(batch_size, dtype=torch.float32).to(device)
-        elif labels is not None:
+        elif labels is not None: # 1 0 
             labels = labels.contiguous().view(-1, 1)
             if labels.shape[0] != batch_size:
                 raise ValueError('Num of labels does not match num of features')
             mask = torch.eq(labels, labels.T).float().to(device)
-        else:
+        else: # 0 1
             mask = mask.float().to(device)
 
         contrast_count = features.shape[1]
@@ -155,8 +155,7 @@ class CrossSupConLoss(nn.Module):
             if labels_A.shape[0] != batch_size or labels_B.shape[0] != batch_size:
                 raise ValueError('Num of labels does not match num of features')
             mask = torch.eq(labels_A, labels_B.T).float().to(device)
-            mask_check = torch.eq(labels_B, labels_A.T).float().to(device)
-            assert mask == mask_check.T #FIXME
+            
         else: # 0 1
             mask = mask.float().to(device)
 
@@ -179,14 +178,14 @@ class CrossSupConLoss(nn.Module):
             torch.matmul(anchor_feature, contrast_feature_B.T),
             self.temperature) # zi * zp mat with size of (bsz*n_view, bsz*n_view) 
                               # asymmetric for A and B
-                              #  (A*B.T) = (B*A.T)
+                              #  (A*B.T).T = (B*A.T)
 
         # for numerical stability, want to avoid very large logits that lead to NaN problem
         logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
         logits = anchor_dot_contrast - logits_max.detach() 
         # 어차피 빼도 gradient는 똑같음.
 
-        # tile mask, cause originally shape is (bsz * bsz)
+        # tile mask, cause originally shape is (bsz * bsz) -> 
         mask = mask.repeat(anchor_count, contrast_count)
         # mask-out self-contrast cases
         # logits_mask = torch.scatter(
@@ -199,17 +198,17 @@ class CrossSupConLoss(nn.Module):
         # input, dim, index, src
         # document 보면 이해는 되는데 너무 어렵다.
         # src랑 index는 겹쳐서 같은 위치를 보면 된다. (예를 들어 (1,2)) src가 스칼라면 그걸 index랑 같은 shape으로 보자.
-        # 같은 위치의 index의 값을 참조하여 위치에서의 dim만 그 값으로 바꾼다. ((1,2)의 index가 3이고 dim이 1이면 1,3 으로 바뀜)
+        # src와 같은 "위치"의 index의 값을 참조하여 "위치"에서의 dim만 그 index 값으로 바꾼다. (위치 (1,2)의 index가 3이고 dim이 1이면 1,3 으로 바뀜)
         # input의 (1,3)을 src의 (1,2로 대체)
-        # 이거 그냥 ones에서 diagonal만 0으로 바꾸는 건데?
+        # 이거 그냥 ones에서 diagonal만 0으로 바꾸는 건데? 다시봐도 맞네
 
-        # mask = mask * logits_mask # label_mask (diagonal 1) * logits_mask ( diagonal 0) 
+        # mask = mask * logits_mask # mask (diagonal 1 from label) * logits_mask ( diagonal 0) 
 
         # compute log_prob
         exp_logits = torch.exp(logits)  # * logits_mask # self-cont filtering
         log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
-        # logits: numerator of (2), positive will be considered further by mask
-        # torch.log: denominator of (2)
+        # logits: numerator of eq(2), positive will be considered further by mask
+        # torch.log: denominator of eq(2)
 
         # compute mean of log-likelihood over positive
         mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)

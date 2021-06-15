@@ -189,7 +189,7 @@ class SupConResNet(nn.Module):
 class SupHybResNet(nn.Module):
     """backbone + projection head"""
     def __init__(self, name='resnet50', head='mlp', feat_dim=128, num_classes=2):
-        super(SupConResNet, self).__init__()
+        super(SupHybResNet, self).__init__()
         model_fun, dim_in = model_dict[name]
         self.encoder = model_fun()
         if head == 'linear':
@@ -206,15 +206,12 @@ class SupHybResNet(nn.Module):
         self.fc = nn.Linear(dim_in, num_classes)
 
 
-    def forward(self, x, way):
-        if way == 'head':
-            feat = self.encoder(x)
-            feat = F.normalize(self.head(feat), dim=1)
-            return feat
-        elif way == 'fc':
-            return self.fc(self.encoder(x))
-        else:
-            raise ValueError("not supported way")
+    def forward(self, x):
+        feat = self.encoder(x)
+        fc = self.fc(feat) # feat.detach()
+        feat = F.normalize(self.head(feat), dim=1)
+        return feat, fc
+        
 
 
 

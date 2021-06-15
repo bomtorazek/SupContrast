@@ -12,12 +12,11 @@ from albumentations.pytorch import ToTensor
 
 
 class GeneralDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir, transform=None, image_names=None):
+    def __init__(self, data_dir,image_names, transform=None ):
         self._data_dir = data_dir
         self._transform = transform
-
-        default_image_names = os.listdir(osp.join(data_dir, 'image'))
-        self._image_names = image_names if image_names is not None else default_image_names
+        self._image_names = image_names
+        
 
         anno_fname = 'single_image.2class.json'
         self._anno_json = json.load(open(osp.join(data_dir, 'annotation', anno_fname), 'r'))
@@ -35,19 +34,19 @@ class GeneralDataset(torch.utils.data.Dataset):
         return len(self._image_fpaths)
 
     def __getitem__(self, index):
-        image_dict = {}
+        # image_dict = {}
 
         img_fpath = self._image_fpaths[index]
-        img = np.array(Image.open(img_fpath))
-        if len(img.shape) == 2: # gray
-            img = np.stack([img, img, img], axis=-1)
-        image_dict['image'] = img
-        image_dict['path'] = img_fpath
+        img = (Image.open(img_fpath))
+        # if len(img.shape) == 2: # gray
+        #     img = np.stack([img, img, img], axis=-1)
+        # image_dict['image'] = img
+        # image_dict['path'] = img_fpath
 
         if self._transform is not None:
-            image_dict = self._transform(**image_dict)
+            image = self._transform(img)
  
-        return image_dict, self._labels[index]
+        return image, self._labels[index]
 
     @property
     def labels(self):

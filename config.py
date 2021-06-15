@@ -20,8 +20,8 @@ def parse_option():
 
     # optimization
     parser.add_argument('--optimizer', type=str, default='ADAM')
-    parser.add_argument('--learning_rate', type=float, default=0.05,
-                        help='learning rate')
+    parser.add_argument('--learning_rate', type=float, default=0.001,
+                        help='learning rate') # 0.05 SGD
     parser.add_argument('--lr_decay_epochs', type=str, default='700,800,900',
                         help='where to decay lr, can be a list')
     parser.add_argument('--lr_decay_rate', type=float, default=0.1,
@@ -33,7 +33,7 @@ def parse_option():
 
     # model dataset
     # network
-    parser.add_argument('--model', type=str, default='resnet50')
+    parser.add_argument('--model', type=str, default='resnet18')
     parser.add_argument('--num_cls', type=int, default=2)
     parser.add_argument('--model_transfer', type=str, default=None)
     parser.add_argument('--gpu', type=str, default= '0')
@@ -47,13 +47,13 @@ def parse_option():
     parser.add_argument('--val_fold', type=int, default=1, help='validation fold')
     parser.add_argument('--test_fold', type=int, default=1, help='test fold')
     parser.add_argument('--train_util_rate', type=float, default=1.0, help='train util rate')
-    parser.add_argument('--translate', type=int, default=16, help='translation augment')
-    parser.add_argument('--rotate90', type=bool, default=True, help='rotation augment')
+    # parser.add_argument('--translate', type=int, default=16, help='translation augment')
+    # parser.add_argument('--rotate90', type=bool, default=True, help='rotation augment')
     parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop')
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
-                        choices=['SupCon', 'SimCLR', 'Joint_Con', 'Joint_CE'], help='choose method')
+                        choices=['SupCon', 'SimCLR', 'Joint_Con', 'Joint_CE', 'CE'], help='choose method')
 
     # temperature
     parser.add_argument('--temp', type=float, default=0.07,
@@ -88,9 +88,9 @@ def parse_option():
     for it in iterations:
         opt.lr_decay_epochs.append(int(it)) # [700,800,900] exponential lr decay default
 
-    opt.model_name = '{}_{}_{}_lr_{}_decay_{}_bsz_{}_temp_{}_trial_{}'.\
-        format(opt.method, opt.dataset, opt.model, opt.learning_rate,
-               opt.weight_decay, opt.batch_size, opt.temp, opt.trial)
+    opt.model_name = '{}_{}_{}_ur{}_fold{}_me{}_lr_{}_decay_{}_bsz_{}_rsz_{}_temp_{}_trial_{}'.\
+        format(opt.method, opt.dataset, opt.model, opt.train_util_rate,opt.val_fold, opt.epochs,opt.learning_rate,
+               opt.weight_decay, opt.batch_size, opt.size, opt.temp, opt.trial)
     # Joint, MLCC, ResNet18, 0.001, 1e-4, bs, temp, 
 
     if opt.cosine:

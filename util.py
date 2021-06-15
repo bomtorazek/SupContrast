@@ -5,6 +5,9 @@ import numpy as np
 import torch
 import torch.optim as optim
 import os.path as osp
+from sklearn.metrics import accuracy_score
+
+
 
 
 class TwoCropTransform:
@@ -122,3 +125,17 @@ def save_model(model, optimizer, opt, epoch, save_file):
     }
     torch.save(state, save_file)
     del state
+
+
+def best_accuracy(gts, probs):
+    best_th = 0.0
+    best_acc = 0.0
+    for th in range(0,200): 
+        th = th/200.0
+        acc = accuracy_score(gts, probs>=th)
+
+        if acc > best_acc:
+            best_acc = acc
+            best_th = th
+    
+    return best_acc, best_th
