@@ -7,6 +7,7 @@ Adapted from: https://github.com/bearpaw/pytorch-classification
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision import models
 
 
 class BasicBlock(nn.Module):
@@ -125,19 +126,23 @@ class ResNet(nn.Module):
 
 
 def resnet18(**kwargs):
-    return ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
+    return models.resnet18(pretrained=True)
+    # return ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
 
 
 def resnet34(**kwargs):
-    return ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
+    return models.resnet34(pretrained=True)
+    # return ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
 
 
 def resnet50(**kwargs):
-    return ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
+    return models.resnet50(pretrained=True)
+    # return ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
 
 
 def resnet101(**kwargs):
-    return ResNet(Bottleneck, [3, 4, 23, 3], **kwargs)
+    return models.resnet101(pretrained=True)
+    # return ResNet(Bottleneck, [3, 4, 23, 3], **kwargs)
 
 
 model_dict = {
@@ -147,6 +152,13 @@ model_dict = {
     'resnet101': [resnet101, 2048],
 }
 
+
+class Identity(nn.Module):
+    def __init__(self):
+        super(Identity, self).__init__()
+        
+    def forward(self, x):
+        return x
 
 class LinearBatchNorm(nn.Module):
     """Implements BatchNorm1d by BatchNorm2d, for SyncBN purpose"""
@@ -168,6 +180,7 @@ class SupConResNet(nn.Module):
         super(SupConResNet, self).__init__()
         model_fun, dim_in = model_dict[name]
         self.encoder = model_fun()
+        self.encoder.fc = Identity()
         if head == 'linear':
             self.head = nn.Linear(dim_in, feat_dim)
         elif head == 'mlp':
@@ -192,6 +205,7 @@ class SupHybResNet(nn.Module):
         super(SupHybResNet, self).__init__()
         model_fun, dim_in = model_dict[name]
         self.encoder = model_fun()
+        self.encoder.fc = Identity()
         if head == 'linear':
             self.head = nn.Linear(dim_in, feat_dim)
         elif head == 'mlp':
@@ -224,6 +238,7 @@ class SupCEResNet(nn.Module):
         super(SupCEResNet, self).__init__()
         model_fun, dim_in = model_dict[name]
         self.encoder = model_fun()
+        self.encoder.fc = Identity()
         self.fc = nn.Linear(dim_in, num_classes)
 
     def forward(self, x):

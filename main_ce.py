@@ -49,10 +49,6 @@ def set_loader(opt):
     train_transform = transforms.Compose([
         transforms.RandomResizedCrop(size=opt.size, scale= scale),
         transforms.RandomHorizontalFlip(),
-        transforms.RandomApply([
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-        ], p=0.8),
-        transforms.RandomGrayscale(p=0.2),
         transforms.ToTensor(),
         normalize,
     ])
@@ -278,10 +274,10 @@ def test(test_loader, model,  opt, best_th = None):
 
 
 def main():
-    os.environ["CUDA_VISIBLE_DEVICES"] = '0'
     best_auc = 0.0
     best_acc = 0.0
     opt = parse_option()
+    os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
 
     # build data loader
     loaders = set_loader(opt)

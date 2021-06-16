@@ -10,6 +10,7 @@ import torch.backends.cudnn as cudnn
 from torch.utils import data
 from torch.utils.data import dataset
 from torchvision import transforms, datasets
+from torch.nn.functional import normalize
 from sklearn.metrics import roc_auc_score
 import numpy as np
 
@@ -54,10 +55,6 @@ def set_loader(opt):
     train_transform = transforms.Compose([
         transforms.RandomResizedCrop(size=opt.size, scale= scale),
         transforms.RandomHorizontalFlip(),
-        transforms.RandomApply([
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-        ], p=0.8),
-        transforms.RandomGrayscale(p=0.2),
         transforms.ToTensor(),
         normalize,
     ])
@@ -188,7 +185,7 @@ def train(train_S, train_T, model, criterion, optimizer, epoch, opt):
     target_iter = iter(train_T)
 
     for idx in range(len(train_T)):
-        try: # 중간에 끝나는 것 방지
+        try: # 중간에 loader 끝나는 것 방지
             images_S, labels_S = source_iter.next()
         except:
             source_iter = iter(train_S)
@@ -202,6 +199,8 @@ def train(train_S, train_T, model, criterion, optimizer, epoch, opt):
         data_time.update(time.time() - end)
         bsz = labels_T.shape[0]
         if opt.method == 'Joint_CE':
+            bsz_T = images_T.shape[0]
+            images_S =images_S[:bsz_T]
             images = torch.cat([images_T, images_S], dim=0)
             labels = torch.cat([labels_T, labels_S], dim=0)
             images = images.cuda(non_blocking=True)
@@ -216,21 +215,24 @@ def train(train_S, train_T, model, criterion, optimizer, epoch, opt):
             
         elif opt.method == 'Joint_Con':
             img_T = torch.cat([images_T[0], images_T[1]], dim=0)
-            img_S = torch.cat([images_S[0], images_S[1]], dim=0)
-            labels = torch.cat([labels_T, labels_T,labels_S,labels_S], dim=0)
+            bsz_T = images_T[0].shape[0]
+            img_S = torch.cat([images_S[0][:bsz_T], images_S[1][:bsz_T]], dim=0)
+            labels = torch.cat([labels_T, labels_T,labels_S[:bsz_T],labels_S[:bsz_T]], dim=0)
             images = torch.cat([img_T, img_S], dim=0)
             # TTSS
-
             images = images.cuda(non_blocking=True)
             labels_T = labels_T.cuda(non_blocking=True)
-            labels_S = labels_S.cuda(non_blocking=True)
+            labels_S = labels_S[:bsz_T].cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
             # warm-up learning rate
             warmup_learning_rate(opt, epoch, idx, len(train_T), optimizer)
 
             # compute loss
             features, output = model(images)
-            f1_T, f2_T, f1_S, f2_S  = torch.split(features, [bsz, bsz, bsz, bsz], dim=0)
+            if opt.head == 'mlp':
+                f1_T, f2_T, f1_S, f2_S  = torch.split(features, [bsz_T, bsz_T, bsz_T, bsz_T], dim=0)
+            elif opt.head == 'fc':
+                f1_T, f2_T, f1_S, f2_S  = torch.split(normalize(output,dim=1), [bsz_T, bsz_T, bsz_T, bsz_T], dim=0)
             features_T = torch.cat([f1_T.unsqueeze(1), f2_T.unsqueeze(1)], dim=1)
             features_S = torch.cat([f1_S.unsqueeze(1), f2_S.unsqueeze(1)], dim=1)
             #make new dimension and concat by that dimension.
@@ -384,11 +386,11 @@ def test(test_loader, model,  opt, best_th = None):
 
 
 def main():
-    os.environ["CUDA_VISIBLE_DEVICES"] = '0'
     best_auc = 0.0
     best_acc = 0.0
     opt = parse_option()
-    
+    os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
+
     # build data loader
     loaders = set_loader(opt) # tuple or dict
 
