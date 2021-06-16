@@ -17,6 +17,9 @@ def parse_option():
                         help='num of workers to use')
     parser.add_argument('--epochs', type=int, default=1000,
                         help='number of training epochs')
+    parser.add_argument('--gpu', type=str, default='0,1,2,3',
+                        help='gpu')
+
 
     # optimization
     parser.add_argument('--optimizer', type=str, default='ADAM')
@@ -36,8 +39,7 @@ def parse_option():
     parser.add_argument('--model', type=str, default='resnet18')
     parser.add_argument('--num_cls', type=int, default=2)
     parser.add_argument('--model_transfer', type=str, default=None)
-    parser.add_argument('--gpu', type=str, default= '0')
-
+  
     parser.add_argument('--dataset', type=str, default='cifar10',
                          help='dataset')
     parser.add_argument('--mean', type=str, help='mean of dataset in path in form of str tuple')
@@ -53,11 +55,14 @@ def parse_option():
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
-                        choices=['SupCon', 'SimCLR', 'Joint_Con', 'Joint_CE', 'CE'], help='choose method')
+                        choices=['SupCon', 'SimCLR', 'Joint_Con', 'Joint_CE','Joint_Con_Whole', 'Joint_CE_Whole', 'CE'], help='choose method')
 
     # temperature
     parser.add_argument('--temp', type=float, default=0.07,
                         help='temperature for loss function')
+    parser.add_argument('--head', type=str, default='mlp',
+                        choices=['mlp', 'fc'],
+                        help='mlp or fc')
 
     # other setting
     parser.add_argument('--cosine', action='store_true',
@@ -88,9 +93,9 @@ def parse_option():
     for it in iterations:
         opt.lr_decay_epochs.append(int(it)) # [700,800,900] exponential lr decay default
 
-    opt.model_name = '{}_{}_{}_ur{}_fold{}_me{}_lr_{}_decay_{}_bsz_{}_rsz_{}_temp_{}_trial_{}'.\
+    opt.model_name = '{}_{}_{}_ur{}_fold{}_me{}_lr_{}_decay_{}_bsz_{}_rsz_{}_temp_{}_head_{}_trial_{}'.\
         format(opt.method, opt.dataset, opt.model, opt.train_util_rate,opt.val_fold, opt.epochs,opt.learning_rate,
-               opt.weight_decay, opt.batch_size, opt.size, opt.temp, opt.trial)
+               opt.weight_decay, opt.batch_size, opt.size, opt.temp, opt.head, opt.trial)
     # Joint, MLCC, ResNet18, 0.001, 1e-4, bs, temp, 
 
     if opt.cosine:
@@ -101,7 +106,7 @@ def parse_option():
         opt.warm = True
     if opt.warm:
         opt.model_name = '{}_warm'.format(opt.model_name)
-        opt.warmup_from = 0.01
+        opt.warmup_from = opt.learning_rate/5
         opt.warm_epochs = 10
         if opt.cosine:
             eta_min = opt.learning_rate * (opt.lr_decay_rate ** 3)

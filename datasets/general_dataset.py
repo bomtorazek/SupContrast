@@ -12,10 +12,14 @@ from albumentations.pytorch import ToTensor
 
 
 class GeneralDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir,image_names, transform=None ):
+    def __init__(self, data_dir,image_names, ext_data_dir=None, ext_image_names=None, transform=None ):
         self._data_dir = data_dir
         self._transform = transform
         self._image_names = image_names
+        self._ext_data_dir = ext_data_dir
+        self._ext_image_names = ext_image_names
+        
+
         
 
         anno_fname = 'single_image.2class.json'
@@ -28,6 +32,17 @@ class GeneralDataset(torch.utils.data.Dataset):
 
             self._image_fpaths.append(image_fpath)
             self._labels.append(label)
+
+        if self._ext_data_dir is not None:
+            self._ext_anno_json = json.load(open(osp.join(ext_data_dir, 'annotation', anno_fname), 'r'))
+            for image_name in self._ext_image_names:
+                image_fpath = osp.join(ext_data_dir, 'image', image_name)
+                label = self._ext_anno_json['single_image'][image_name]['class'][0]
+
+                self._image_fpaths.append(image_fpath)
+                self._labels.append(label)
+
+
 
 
     def __len__(self):

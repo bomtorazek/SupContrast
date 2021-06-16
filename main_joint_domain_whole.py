@@ -2,32 +2,34 @@ from __future__ import print_function
 
 import os
 import sys
-import argparse
 import time
-import math
-import csv
 
 import tensorboard_logger as tb_logger
 import torch
 import torch.backends.cudnn as cudnn
-import numpy as np
+from torch.utils import data
+from torch.utils.data import dataset
 from torchvision import transforms, datasets
+from torch.nn.functional import normalize
 from sklearn.metrics import roc_auc_score
+import numpy as np
 
-from datasets.general_dataset import GeneralDataset
-from util import AverageMeter
-from util import adjust_learning_rate, warmup_learning_rate, accuracy, best_accuracy
+from util import TwoCropTransform, AverageMeter
+from util import adjust_learning_rate, warmup_learning_rate,accuracy, best_accuracy
 from util import set_optimizer, save_model
+from networks.resnet_big import SupHybResNet
+from losses import SupConLoss, CrossSupConLoss
+from config import parse_option
+from datasets.general_dataset import GeneralDataset
 # from torchsampler import ImbalancedDatasetSampler
 from util import load_image_names
-from networks.resnet_big import SupCEResNet
 
 try:
     import apex
     from apex import amp, optimizers
 except ImportError:
     pass
-from config import parse_option
+
 
 def set_loader(opt):
     # construct data loader
@@ -38,6 +40,10 @@ def set_loader(opt):
     elif opt.dataset == 'cifar100':
         mean = (0.5071, 0.4867, 0.4408)
         std = (0.2675, 0.2565, 0.2761)
+        scale = (0.2, 1.)
+    elif opt.dataset == 'path':
+        mean = eval(opt.mean)
+        std = eval(opt.std)
         scale = (0.2, 1.)
     else:
         mean = (0.485, 0.456, 0.406)
@@ -56,43 +62,51 @@ def set_loader(opt):
         transforms.ToTensor(),
         normalize,
     ])
-
     test_transform = val_transform = transforms.Compose([
         transforms.Resize(opt.size),
         transforms.ToTensor(),
         normalize,
     ])
+
+    if opt.method == 'Joint_Con_Whole':
+        train_transform =TwoCropTransform(train_transform)
+    elif opt.method == 'Joint_CE_Whole':
+        pass
+    else:
+        raise ValueError("check method")    
+
     
+    # dataset
     custom = False
     if opt.dataset == 'cifar10':
         train_dataset = datasets.CIFAR10(root=opt.data_folder,
-                                         transform=train_transform,
-                                         download=True)
-        val_dataset = datasets.CIFAR10(root=opt.data_folder,
-                                       train=False,
-                                       transform=val_transform)
+                                        transform=train_transform,
+                                        download=True)
     elif opt.dataset == 'cifar100':
         train_dataset = datasets.CIFAR100(root=opt.data_folder,
-                                          transform=train_transform,
-                                          download=True)
-        val_dataset = datasets.CIFAR100(root=opt.data_folder,
-                                        train=False,
-                                        transform=val_transform)
+                                        transform=train_transform,
+                                        download=True)
+    elif opt.dataset == 'path':
+        train_dataset = datasets.ImageFolder(root=opt.data_folder,
+                                            transform=train_transform)
     else:
-        custom = True
+        train_names_S, _, _ = load_image_names(opt.source_data_folder, 1.0, opt)
         train_names_T, val_names_T, test_names_T = load_image_names(opt.data_folder, opt.train_util_rate,opt)
         
-        train_dataset_T = GeneralDataset(data_dir=opt.data_folder, image_names=train_names_T,
+        train_dataset = GeneralDataset(data_dir=opt.data_folder, image_names=train_names_T,
+                                        ext_data_dir=opt.source_data_folder, ext_image_names=train_names_S,
                                         transform=train_transform)
         val_dataset_T = GeneralDataset(data_dir=opt.data_folder, image_names=val_names_T,
                                         transform=val_transform,)
         test_dataset_T = GeneralDataset(data_dir=opt.data_folder, image_names=test_names_T,
                                         transform=test_transform)
+        custom = True
 
+    # dataloader
     if custom:
-        train_loader_T = torch.utils.data.DataLoader(
-            train_dataset_T, batch_size=opt.batch_size, shuffle= True,
-            num_workers=opt.num_workers, pin_memory=True, sampler=None)
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=opt.batch_size, shuffle= True,
+            num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
         val_loader_T = torch.utils.data.DataLoader(
             val_dataset_T, batch_size=opt.batch_size, shuffle= False,
             num_workers=opt.num_workers, pin_memory=True, sampler=None)
@@ -100,90 +114,150 @@ def set_loader(opt):
             test_dataset_T, batch_size=opt.batch_size, shuffle= False,
             num_workers=opt.num_workers, pin_memory=True, sampler=None)
 
-        return { 'train': train_loader_T, 'val': val_loader_T, 'test': test_loader_T}
-
+        return { 'train': train_loader, 'val': val_loader_T, 'test': test_loader_T}
 
     else:
         train_sampler = None
         train_loader = torch.utils.data.DataLoader(
             train_dataset, batch_size=opt.batch_size, shuffle=(train_sampler is None),
             num_workers=opt.num_workers, pin_memory=True, sampler=train_sampler)
-        val_loader = torch.utils.data.DataLoader(
-            val_dataset, batch_size=256, shuffle=False,
-            num_workers=8, pin_memory=True)
-
-        return { 'train': train_loader, 'val': val_loader}
+        return train_loader
 
 
 def set_model(opt):
-    model = SupCEResNet(name=opt.model, num_classes=opt.num_cls)
-    criterion = torch.nn.CrossEntropyLoss()
+    model = SupHybResNet(name=opt.model, num_classes=opt.num_cls) 
+    
+    if opt.method == 'Joint_Con_Whole':
+        criterion = {}
+        criterion['Cross'] = CrossSupConLoss(temperature=opt.temp)
+        criterion['Con'] = SupConLoss(temperature=opt.temp)
+        criterion['CE'] = torch.nn.CrossEntropyLoss() 
+    elif opt.method == 'Joint_CE_Whole':
+        criterion = torch.nn.CrossEntropyLoss()
+    else:
+        raise ValueError("check method")
 
+    if opt.model_transfer is not None:
+        pretrained_dict = torch.load(opt.model_transfer)['model']
+        model_dict = model.state_dict()
+        pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+        model_dict.update(pretrained_dict) 
+        model.load_state_dict(model_dict)
+   
     # enable synchronized Batch Normalization
     if opt.syncBN:
         model = apex.parallel.convert_syncbn_model(model)
 
     if torch.cuda.is_available():
         if torch.cuda.device_count() > 1:
-            model = torch.nn.DataParallel(model)
+            model.encoder = torch.nn.DataParallel(model.encoder)
         model = model.cuda()
-        criterion = criterion.cuda()
+        if opt.method == 'Joint_Con_Whole':
+            criterion['CE']=criterion['CE'].cuda()
+            criterion['Cross']=criterion['Cross'].cuda()
+            criterion['Con']=criterion['Con'].cuda()
+        elif opt.method == 'Joint_CE_Whole':
+            criterion = criterion.cuda()
+        else:
+            raise ValueError("check method")
         cudnn.benchmark = True
 
     return model, criterion
 
 
-def train(train_loader, model, criterion, optimizer, epoch, opt):
+def train(trainloader, model, criterion, optimizer, epoch, opt):
     """one epoch training"""
     model.train()
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    losses = AverageMeter()
+    losses_CE = AverageMeter()
     top1 = AverageMeter()
 
+    if opt.method == 'Joint_Con_Whole':
+        losses_Con = AverageMeter()
     end = time.time()
-    for idx, (images, labels) in enumerate(train_loader):
+
+    for idx, (images, labels) in enumerate(trainloader):   
         data_time.update(time.time() - end)
-
-        images = images.cuda(non_blocking=True)
-        labels = labels.cuda(non_blocking=True)
         bsz = labels.shape[0]
+        if opt.method == 'Joint_CE_Whole':
+            images = images.cuda(non_blocking=True)
+            labels = labels.cuda(non_blocking=True)
 
-        # warm-up learning rate
-        warmup_learning_rate(opt, epoch, idx, len(train_loader), optimizer)
+            # warm-up learning rate
+            warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
 
-        # compute loss
-        output = model(images)
-        loss = criterion(output, labels)
+            # compute loss
+            _, output = model(images)
+            loss_CE = criterion(output, labels)
+            
+        elif opt.method == 'Joint_Con_Whole':
+            images = torch.cat([images[0], images[1]], dim=0)
+            images = images.cuda(non_blocking=True)
+            labels = labels.cuda(non_blocking=True)
+            labels_aug = torch.cat([labels, labels], dim=0)
+            
+            warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
+
+            # compute loss
+            features, output = model(images)
+            if opt.head == 'mlp':
+                f1_T, f2_T = torch.split(features, [bsz, bsz], dim=0)
+            elif opt.head == 'fc':
+                f1_T, f2_T = torch.split(normalize(output,dim=1), [bsz, bsz], dim=0)
+            features_T = torch.cat([f1_T.unsqueeze(1), f2_T.unsqueeze(1)], dim=1)
+            
+            loss_Con = criterion['Con'](features_T, labels)
+            loss_CE = criterion['CE'](output, labels_aug)
+        else:
+            raise ValueError("check method")  
 
         # update metric
-        losses.update(loss.item(), bsz)
-        acc1, acc2 = accuracy(output, labels, topk=(1, 2))
+        losses_CE.update(loss_CE.item(), bsz)
+        if opt.method == 'Joint_Con_Whole':
+            losses_Con.update(loss_Con.item(), bsz)
+            acc1, _ = accuracy(output[:bsz,:], labels[:bsz], topk=(1, 2))
+
+        elif opt.method == 'Joint_CE_Whole':
+            acc1, _ = accuracy(output[:bsz,:], labels[:bsz], topk=(1, 2))
+        else:
+            raise ValueError("check method")  
         top1.update(acc1[0], bsz)
 
         # SGD
+
         optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        if opt.method == 'Joint_Con_Whole':
+            total_loss = loss_Con + loss_CE
+            total_loss.backward()
+            optimizer.step() 
+        elif opt.method == 'Joint_CE_Whole':
+            loss_CE.backward()
+            optimizer.step()
+        else:
+            raise ValueError("check method")  
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
 
         # print info
-        if idx == len(train_loader)-1:
+        # if idx == len(train_T)-1:
+        if idx % 1 == 0:
             print('Train: [{0}][{1}/{2}]\t'
                   'BT {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'DT {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'loss {loss.val:.3f} ({loss.avg:.3f})\t'
-                  'Acc@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
-                   epoch, idx + 1, len(train_loader), batch_time=batch_time,
-                   data_time=data_time, loss=losses, top1=top1))
+                  'loss {loss.val:.3f} ({loss.avg:.3f})'.format(
+                   epoch, idx + 1, len(trainloader), batch_time=batch_time,
+                   data_time=data_time, loss=losses_CE))
             sys.stdout.flush()
-
-    return losses.avg, top1.avg
-
+    if opt.method == 'Joint_Con_Whole':
+        return {'CE':losses_CE.avg, 'Con': losses_Con.avg}, top1.avg
+    elif opt.method == 'Joint_CE_Whole':
+        return losses_CE.avg, top1.avg
+    else:
+        raise ValueError("check method")  
 
 def validate(val_loader, model, criterion, opt):
     """validation"""
@@ -205,11 +279,17 @@ def validate(val_loader, model, criterion, opt):
             bsz = labels.shape[0]
 
             # forward
-            output = model(images)
+            _, output = model(images)
             prob = torch.nn.functional.softmax(output, dim=1)[:,1]
             probs.extend(prob.tolist())
-            loss = criterion(output, labels)
-
+            
+            if opt.method == 'Joint_Con_Whole':
+                loss = criterion['CE'](output, labels)
+            elif opt.method == 'Joint_CE_Whole':
+                loss = criterion(output, labels)
+            else:
+                raise ValueError("check method")  
+                
             # update metric
             losses.update(loss.item(), bsz)
 
@@ -260,7 +340,7 @@ def test(test_loader, model,  opt, best_th = None):
             labels = labels.cuda()
 
             # forward
-            output = model(images)
+            _, output = model(images)
             prob = torch.nn.functional.softmax(output, dim=1)[:,1]
             probs.extend(prob.tolist())
             
@@ -284,7 +364,7 @@ def main():
     os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
 
     # build data loader
-    loaders = set_loader(opt)
+    loaders = set_loader(opt) # tuple or dict
 
     # build model and criterion
     model, criterion = set_model(opt)
@@ -306,13 +386,18 @@ def main():
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
         # tensorboard logger
-        logger.log_value('train_loss', loss, epoch)
+        if opt.method == 'Joint_Con_Whole':
+            logger.log_value('train_loss_CE', loss['CE'], epoch)
+            logger.log_value('train_Con_TT', loss['Con'], epoch)
+
+        else:
+            logger.log_value('train_loss', loss, epoch)
         logger.log_value('train_acc', train_acc, epoch)
         logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
 
         # evaluation
-        loss, val_auc, val_acc, val_th = validate(loaders['val'], model, criterion, opt)
-        logger.log_value('val_loss', loss, epoch)
+        val_loss, val_auc, val_acc, val_th = validate(loaders['val'], model, criterion, opt)
+        logger.log_value('val_loss', val_loss, epoch)
         logger.log_value('val_auc', val_auc, epoch)
         logger.log_value('val_acc', val_acc, epoch)
         logger.log_value('val_th', val_th, epoch)
@@ -330,10 +415,6 @@ def main():
                 opt.save_folder, 'acc_best.pth')
             save_model(model, optimizer, opt, epoch, save_file)
 
-    # # save the last model
-    # save_file = os.path.join(
-    #     opt.save_folder, 'last.pth')
-    # save_model(model, optimizer, opt, opt.epochs, save_file)
 
     best_auc = test(loaders['test'], model, opt)
     best_acc = test(loaders['test'], model, opt, best_th)
@@ -341,12 +422,11 @@ def main():
     print('Test acc: {:.2f}'.format(best_acc) ,end = ' ')
     print('Test th: {:.2f}'.format(best_th) ,end = ' ')
 
+    import csv
     with open("result.csv", "a") as file:
         writer = csv.writer(file)
         row = [opt.model_name, 'auc', best_auc, 'acc', best_acc, 'th', best_th]
         writer.writerow(row)
-
-
 
 
 if __name__ == '__main__':
