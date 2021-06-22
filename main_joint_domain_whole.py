@@ -14,8 +14,8 @@ from torch.nn.functional import normalize
 from sklearn.metrics import roc_auc_score
 import numpy as np
 
-from util import TwoCropTransform, AverageMeter
-from util import adjust_learning_rate, warmup_learning_rate,accuracy, best_accuracy
+from util import TwoCropTransform, get_transform
+from util import adjust_learning_rate, warmup_learning_rate,accuracy, best_accuracy, AverageMeter
 from util import set_optimizer, save_model
 from networks.resnet_big import SupHybResNet
 from losses import SupConLoss, CrossSupConLoss
@@ -51,17 +51,8 @@ def set_loader(opt):
         scale = (0.875, 1.)
 
     normalize = transforms.Normalize(mean=mean, std=std)
+    train_transform = get_transform(opt=opt, mean=mean, std=std, scale=scale)
 
-    train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(size=opt.size, scale= scale),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomApply([
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-        ], p=0.8),
-        transforms.RandomGrayscale(p=0.2),
-        transforms.ToTensor(),
-        normalize,
-    ])
     test_transform = val_transform = transforms.Compose([
         transforms.Resize(opt.size),
         transforms.ToTensor(),
@@ -125,7 +116,7 @@ def set_loader(opt):
 
 
 def set_model(opt):
-    model = SupHybResNet(name=opt.model, num_classes=opt.num_cls) 
+    model = SupHybResNet(name=opt.model, feat_dim=opt.feat_dim,num_classes=opt.num_cls) 
     
     if opt.method == 'Joint_Con_Whole':
         criterion = {}
@@ -150,7 +141,10 @@ def set_model(opt):
 
     if torch.cuda.is_available():
         if torch.cuda.device_count() > 1:
-            model.encoder = torch.nn.DataParallel(model.encoder)
+            if opt.dp:
+                model = torch.nn.DataParallel(model)
+            else:
+                model.encoder = torch.nn.DataParallel(model.encoder)
         model = model.cuda()
         if opt.method == 'Joint_Con_Whole':
             criterion['CE']=criterion['CE'].cuda()
@@ -229,7 +223,7 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
 
         optimizer.zero_grad()
         if opt.method == 'Joint_Con_Whole':
-            total_loss = loss_Con + loss_CE
+            total_loss = opt.l_con * loss_Con + loss_CE
             total_loss.backward()
             optimizer.step() 
         elif opt.method == 'Joint_CE_Whole':
@@ -360,6 +354,7 @@ def test(test_loader, model,  opt, best_th = None):
 def main():
     best_auc = 0.0
     best_acc = 0.0
+    best_epoch = 0
     opt = parse_option()
     os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
 
@@ -404,16 +399,20 @@ def main():
 
 
         if val_auc > best_auc:
+            best_epoch = epoch
             best_auc = val_auc
             save_file = os.path.join(
                 opt.save_folder, 'auc_best.pth')
             save_model(model, optimizer, opt, epoch, save_file)
         if val_acc > best_acc:
+            best_epoch = epoch
             best_acc = val_acc
             best_th = val_th
             save_file = os.path.join(
                 opt.save_folder, 'acc_best.pth')
             save_model(model, optimizer, opt, epoch, save_file)
+        if epoch >= best_epoch + opt.patience:
+            break
 
 
     best_auc = test(loaders['test'], model, opt)

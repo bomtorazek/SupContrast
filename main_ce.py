@@ -278,6 +278,7 @@ def test(test_loader, model,  opt, best_th = None):
 
 
 def main():
+    best_epoch = 0
     best_auc = 0.0
     best_acc = 0.0
     opt = parse_option()
@@ -319,17 +320,20 @@ def main():
 
 
         if val_auc > best_auc:
+            best_epoch = epoch
             best_auc = val_auc
             save_file = os.path.join(
                 opt.save_folder, 'auc_best.pth')
             save_model(model, optimizer, opt, epoch, save_file)
         if val_acc > best_acc:
+            best_epoch = epoch
             best_acc = val_acc
             best_th = val_th
             save_file = os.path.join(
                 opt.save_folder, 'acc_best.pth')
             save_model(model, optimizer, opt, epoch, save_file)
-
+        if epoch >= best_epoch + opt.patience:
+            break
     # # save the last model
     # save_file = os.path.join(
     #     opt.save_folder, 'last.pth')

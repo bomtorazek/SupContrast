@@ -19,7 +19,8 @@ def parse_option():
                         help='number of training epochs')
     parser.add_argument('--gpu', type=str, default='0,1,2,3',
                         help='gpu')
-
+    parser.add_argument('--patience', type=int, default=50,
+                        help='patience for training')
 
     # optimization
     parser.add_argument('--optimizer', type=str, default='ADAM')
@@ -57,12 +58,22 @@ def parse_option():
     parser.add_argument('--method', type=str, default='SupCon',
                         choices=['SupCon', 'SimCLR', 'Joint_Con', 'Joint_CE','Joint_Con_Whole', 'Joint_CE_Whole', 'CE'], help='choose method')
 
-    # temperature
-    parser.add_argument('--temp', type=float, default=0.07,
+    # temperature and hypers
+    parser.add_argument('--temp', type=float, default=0.08,
                         help='temperature for loss function')
+    parser.add_argument('--l_con', type=float, default=2.0,
+                        help='lambda for cont loss')
     parser.add_argument('--head', type=str, default='mlp',
                         choices=['mlp', 'fc'],
                         help='mlp or fc')
+    parser.add_argument('--feat_dim', type=int, default=128,
+                        help='dim of feature head')
+    parser.add_argument('--aug', type=str, default='sim',
+                        help='augmentation type, rand_3_5, cutmix, stacked_rand_2_10 ')
+    parser.add_argument('--dp', action='store_true', default=False,
+                        help='data parallel for whole model ')
+                   
+
 
     # other setting
     parser.add_argument('--cosine', action='store_true',
@@ -93,9 +104,9 @@ def parse_option():
     for it in iterations:
         opt.lr_decay_epochs.append(int(it)) # [700,800,900] exponential lr decay default
 
-    opt.model_name = '{}_{}_{}_ur{}_fold{}_me{}_lr_{}_decay_{}_bsz_{}_rsz_{}_temp_{}_head_{}_trial_{}'.\
-        format(opt.method, opt.dataset, opt.model, opt.train_util_rate,opt.val_fold, opt.epochs,opt.learning_rate,
-               opt.weight_decay, opt.batch_size, opt.size, opt.temp, opt.head, opt.trial)
+    opt.model_name = '{}_{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}_head_{}_trial_{}_fold_{}'.\
+        format(opt.method, opt.dataset, opt.model, opt.train_util_rate, opt.epochs,opt.learning_rate,
+               opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp, opt.head, opt.trial, opt.val_fold)
     # Joint, MLCC, ResNet18, 0.001, 1e-4, bs, temp, 
 
     if opt.cosine:
