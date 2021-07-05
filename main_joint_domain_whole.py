@@ -21,8 +21,11 @@ from networks.resnet_big import SupHybResNet
 from losses import SupConLoss, CrossSupConLoss
 from config import parse_option
 from datasets.general_dataset import GeneralDataset
-# from torchsampler import ImbalancedDatasetSampler
 from util import load_image_names
+from pytorch_grad_cam import GradCAM, ScoreCAM, GradCAMPlusPlus, AblationCAM, XGradCAM, EigenCAM
+from pytorch_grad_cam.utils.image import show_cam_on_image
+from sklearn.metrics import accuracy_score
+
 
 try:
     import apex
@@ -187,12 +190,14 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
             loss_CE = criterion(output, labels)
             
         elif opt.method == 'Joint_Con_Whole':
+            
             images = torch.cat([images[0], images[1]], dim=0)
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
             labels_aug = torch.cat([labels, labels], dim=0)
             
             warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
+
 
             # compute loss
             features, output = model(images)
@@ -237,8 +242,8 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
         end = time.time()
 
         # print info
-        # if idx == len(train_T)-1:
-        if idx % 1 == 0:
+        if idx == len(trainloader)-1:
+        # if idx % 1 == 0:
             print('Train: [{0}][{1}/{2}]\t'
                   'BT {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'DT {data_time.val:.3f} ({data_time.avg:.3f})\t'
@@ -306,24 +311,34 @@ def validate(val_loader, model, criterion, opt):
     probs = np.array(probs)
     auc = roc_auc_score(gts, probs)
     best_acc, best_th = best_accuracy(gts,probs)
-    print('Val auc: {:.3f}'.format(auc), end = ' ')
-    print('Val acc: {:.3f}'.format(best_acc) )
+    acc = accuracy_score(gts, probs>=0.5)
     
-    return losses.avg, auc, best_acc, best_th
+    print('Val auc: {:.3f}'.format(auc), end = ' ')
+    print('Val bacc: {:.3f}'.format(best_acc) )
+    print('Val acc: {:.3f}'.format(acc) )
+    
+    return losses.avg, auc, best_acc, best_th, acc
 
-def test(test_loader, model,  opt, best_th = None):
+def test(test_loader, model,  opt, metric=None, best_th = None):
     model.eval()
 
     probs = []
     gts = []
 
     if best_th is None:
-        pretrained_dict = torch.load(os.path.join(
-                opt.save_folder, 'auc_best.pth'))['model']
-        model.load_state_dict(pretrained_dict)
+        if metric == 'auc':
+            pretrained_dict = torch.load(os.path.join(
+                    opt.save_folder, 'auc_best.pth'))['model']
+            model.load_state_dict(pretrained_dict)
+        elif metric == 'acc':
+            pretrained_dict = torch.load(os.path.join(
+                    opt.save_folder, 'acc_best.pth'))['model']
+            model.load_state_dict(pretrained_dict)
+        else:
+            raise ValueError("not supported metric")
     else:
         pretrained_dict = torch.load(os.path.join(
-                opt.save_folder, 'acc_best.pth'))['model']
+                opt.save_folder, 'bacc_best.pth'))['model']
         model.load_state_dict(pretrained_dict)
 
 
@@ -343,17 +358,24 @@ def test(test_loader, model,  opt, best_th = None):
     probs = np.array(probs)
 
     if best_th is None:
-        auc = roc_auc_score(gts, probs)
-        return auc
+        if metric == 'auc':
+            auc = roc_auc_score(gts, probs)
+            return auc
+        elif metric == 'acc':
+            acc = accuracy_score(gts, probs>=0.5)
+            return acc
+        else:
+            raise ValueError("unsupported metric")
     else:
-        from sklearn.metrics import accuracy_score
-        acc = accuracy_score(gts, probs>=best_th)
-        return acc 
+        bacc = accuracy_score(gts, probs>=best_th)
+        best_acc, best_th = best_accuracy(gts,probs)
+        return bacc, best_acc, best_th
 
 
 def main():
     best_auc = 0.0
-    best_acc = 0.0
+    best_acc =0.0
+    best_bacc = 0.0
     best_epoch = 0
     opt = parse_option()
     os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
@@ -391,11 +413,12 @@ def main():
         logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
 
         # evaluation
-        val_loss, val_auc, val_acc, val_th = validate(loaders['val'], model, criterion, opt)
+        val_loss, val_auc, val_bacc, val_th, val_acc = validate(loaders['val'], model, criterion, opt)
         logger.log_value('val_loss', val_loss, epoch)
         logger.log_value('val_auc', val_auc, epoch)
-        logger.log_value('val_acc', val_acc, epoch)
+        logger.log_value('val_acc', val_bacc, epoch)
         logger.log_value('val_th', val_th, epoch)
+        logger.log_value('val_acc_0.5', val_acc, epoch)
 
 
         if val_auc > best_auc:
@@ -404,27 +427,38 @@ def main():
             save_file = os.path.join(
                 opt.save_folder, 'auc_best.pth')
             save_model(model, optimizer, opt, epoch, save_file)
+        if val_bacc > best_bacc:
+            best_epoch = epoch
+            best_bacc = val_bacc
+            best_th = val_th
+            save_file = os.path.join(
+                opt.save_folder, 'bacc_best.pth')
+            save_model(model, optimizer, opt, epoch, save_file)
         if val_acc > best_acc:
             best_epoch = epoch
             best_acc = val_acc
-            best_th = val_th
             save_file = os.path.join(
                 opt.save_folder, 'acc_best.pth')
             save_model(model, optimizer, opt, epoch, save_file)
+            
+        
         if epoch >= best_epoch + opt.patience:
             break
 
 
-    best_auc = test(loaders['test'], model, opt)
-    best_acc = test(loaders['test'], model, opt, best_th)
-    print('Test auc: {:.2f}'.format(best_auc), end = ' ')
-    print('Test acc: {:.2f}'.format(best_acc) ,end = ' ')
+    test_auc = test(loaders['test'], model, opt, metric='auc')
+    test_bacc, test_Bacc, test_th  = test(loaders['test'], model, opt, best_th=best_th)
+    test_acc = test(loaders['test'], model, opt, metric='acc')
+    print('Test auc: {:.4f}'.format(test_auc), end = ' ')
+    print('Test acc: {:.4f}'.format(test_bacc) ,end = ' ')
     print('Test th: {:.2f}'.format(best_th) ,end = ' ')
+
+
 
     import csv
     with open("result.csv", "a") as file:
         writer = csv.writer(file)
-        row = [opt.model_name, 'auc', best_auc, 'acc', best_acc, 'th', best_th]
+        row = [opt.model_name, 'auc', test_auc, 'acc', test_bacc, 'th', best_th, 'acc_0.5',test_acc,'acc_test_best', test_Bacc,'test_th',test_th ]
         writer.writerow(row)
 
 

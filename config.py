@@ -19,7 +19,7 @@ def parse_option():
                         help='number of training epochs')
     parser.add_argument('--gpu', type=str, default='0,1,2,3',
                         help='gpu')
-    parser.add_argument('--patience', type=int, default=50,
+    parser.add_argument('--patience', type=int, default=200,
                         help='patience for training')
 
     # optimization
@@ -69,7 +69,7 @@ def parse_option():
     parser.add_argument('--feat_dim', type=int, default=128,
                         help='dim of feature head')
     parser.add_argument('--aug', type=str, default='sim',
-                        help='augmentation type, rand_3_5, cutmix, stacked_rand_2_10 ')
+                        help='augmentation type, rand_3_5, cutmix_0.5_PP or AB or EI, stacked_rand_2_10 ')
     parser.add_argument('--dp', action='store_true', default=False,
                         help='data parallel for whole model ')
                    

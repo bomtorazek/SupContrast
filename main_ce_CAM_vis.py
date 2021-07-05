@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 
 from datasets.general_dataset import GeneralDataset
-from util import get_transform, rand_bbox, bbox2
+from util import get_transform
 from util import AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate, accuracy, best_accuracy
 from util import set_optimizer, save_model
@@ -131,7 +131,7 @@ def set_model(opt):
     return model, criterion
 
 
-def train(train_loader, model, criterion, optimizer, epoch, opt, CUTMIX = False,cam = None):
+def train(train_loader, model, criterion, optimizer, epoch, opt):
     """one epoch training"""
     model.train()
 
@@ -141,14 +141,6 @@ def train(train_loader, model, criterion, optimizer, epoch, opt, CUTMIX = False,
     top1 = AverageMeter()
 
     end = time.time()
-
-    if 'cut' in opt.aug:
-        CUTMIX = True
-        spt = opt.aug.split('_')
-        cutmix_prob = float(spt[1])
-        m = torch.nn.Softmax(dim=1)
-        
-
     for idx, (images, labels) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
@@ -161,66 +153,63 @@ def train(train_loader, model, criterion, optimizer, epoch, opt, CUTMIX = False,
 
 
         # compute loss
-        r = np.random.rand(1)
-        if CUTMIX and r < cutmix_prob:
-
-            ng_imgs = images[labels == 1]
-            grayscale_cam= cam(input_tensor=ng_imgs, target_category=1) # (n_ng,h,w) numpy 0~1
-            cam_mask = grayscale_cam >= 0.7 #  (n_ng,h,w)
-
-            ng_outputs = model(ng_imgs) # FIXME double forwards
-            soft_output = m(ng_outputs) # n_ng, 2
-
-            lam = np.random.beta(1.0, 1.0)
-            rand_index = torch.randperm(images.size()[0]).cuda()
-            labels_a = labels
-            labels_b = labels[rand_index]
-            cutmix_labels = torch.zeros_like(labels)
-
-            bbx1, bby1, bbx2, bby2 = rand_bbox(images.size(), lam)
-            ng_iidx = [iid for iid in range(len(labels)) if labels[iid] == 1 ] # ng인 애들 
-
-            for iidx in range(bsz):
-                iidx_b = rand_index[iidx]
-                if labels_a[iidx] == 0:
-                    if labels_b[iidx] == 0: # ok <- ok: ok, random box of cutmix
-                        pass
-                        images[iidx, :, bbx1:bbx2, bby1:bby2] = images[iidx_b, :, bbx1:bbx2, bby1:bby2]
-                    elif labels_b[iidx] == 1: # ok <- ng: to ng, cut defect-region
-                        ng_id = ng_iidx.index(iidx_b) # iidx_b가 ng_iidx에서 몇 번째인지
-                        if soft_output[ng_id, 1] >= 0.9:
-                            bbx1, bbx2, bby1, bby2 = bbox2(cam_mask[ng_id,:,:]) # bounding box 추출
-                            images[iidx, :, bbx1:bbx2, bby1:bby2] = images[iidx_b, :, bbx1:bbx2, bby1:bby2]
-                            cutmix_labels[iidx] = 1
-                    else:
-                        raise ValueError("fucked label")
-                elif labels_a[iidx] == 1: 
-                    if labels_b[iidx] == 0:  # ng <- ok: ng, cut non-defect-region
-                        ng_id = ng_iidx.index(iidx)
-                        if soft_output[ng_id, 1] >= 0.9:
-                            bbs = bbox2(cam_mask[ng_id,:,:]) # bounding box 추출
-                            bbx1, bby1, bbx2, bby2 = rand_bbox(images.size(), lam, bbs) # 겹치면 빼기
-                            images[iidx, :, bbx1:bbx2, bby1:bby2] = images[iidx_b, :, bbx1:bbx2, bby1:bby2]
-                        cutmix_labels[iidx] = 1 
-
-                    elif labels_b[iidx] == 1: # ng <- ng: ng, cut defect-region (box)
-                        ng_id = ng_iidx.index(iidx_b) # real_iidx가 ng_idx에서 몇 번째인지
-                        if soft_output[ng_id, 1] >= 0.9:
-                            bbx1, bbx2, bby1, bby2 = bbox2(cam_mask[ng_id,:,:]) # bounding box 추출
-                            images[iidx, :, bbx1:bbx2, bby1:bby2] = images[iidx_b, :, bbx1:bbx2, bby1:bby2]
-                        cutmix_labels[iidx] = 1
-
-                    else:
-                        raise ValueError("fucked label")
-                else:
-                    raise ValueError("fucked label")
-            # ROI는 곱하기로 alpha blending 하면 된다.
-
         output = model(images)
-        if CUTMIX and r < cutmix_prob:
-            loss = criterion(output, cutmix_labels)
-        else:
-            loss = criterion(output, labels)
+        loss = criterion(output, labels)
+
+        if 'cut' in opt.aug and epoch >= int(opt.trial):
+            if idx>=1 and idx%4 == 0:
+                ng_imgs = images[labels == 1]
+                ng_outputs = output[labels == 1]
+                ng_output = ng_outputs[0]
+                m = torch.nn.Softmax(dim=0)
+                soft_output = m(ng_output)
+                
+                ng_imgs_cpu = ng_imgs[0].cpu().data.numpy()
+
+                # GradCAMPlusPlus, AblationCAM, EigenCAM
+                cam_p = GradCAMPlusPlus(model=model.module, target_layer=model.module.encoder.layer4[-1], use_cuda=True) # module if dataparallel
+                cam_a = AblationCAM(model=model.module, target_layer=model.module.encoder.layer4[-1], use_cuda=True) # module if dataparallel
+                cam_e = EigenCAM(model=model.module, target_layer=model.module.encoder.layer4[-1], use_cuda=True) # module if dataparallel
+                grayscale_cam_p = cam_p(input_tensor=ng_imgs, target_category=1) # (n_ng,h,w), numpy
+                grayscale_cam_a = cam_a(input_tensor=ng_imgs, target_category=1) # (n_ng,h,w), numpy
+                grayscale_cam_e = cam_e(input_tensor=ng_imgs, target_category=1) # (n_ng,h,w), numpy
+                
+
+                ng_imgs_cpu = denormalize(ng_imgs_cpu)
+                ng_imgs_cpu = np.transpose(ng_imgs_cpu, (1,2,0))
+                visualization_p = show_cam_on_image(ng_imgs_cpu, grayscale_cam_p[0], use_rgb=True)
+                visualization_a = show_cam_on_image(ng_imgs_cpu, grayscale_cam_a[0], use_rgb=True)
+                visualization_e = show_cam_on_image(ng_imgs_cpu, grayscale_cam_e[0], use_rgb=True)
+                ng_imgs_cpu = np.uint8(255 * ng_imgs_cpu)
+
+                fig = plt.figure(figsize=(80, 20), dpi=150)
+                name = f'epoch_{epoch}_idx{idx}_acc_{top1.avg}_conf_{soft_output[1].item()}'
+                fig.suptitle(name, fontsize=80)
+
+                plt.rcParams.update({'font.size': 50})
+                ax = fig.add_subplot(1, 4, 1)
+                img1 = Image.fromarray(ng_imgs_cpu, 'RGB')
+                plt.imshow(img1)
+                ax.set_title('origin')
+                
+                ax = fig.add_subplot(1, 4, 2)
+                vp = Image.fromarray(visualization_p, 'RGB')
+                plt.imshow(vp)
+                ax.set_title('Grad++')
+
+                ax = fig.add_subplot(1, 4, 3)
+                va = Image.fromarray(visualization_a, 'RGB')
+                plt.imshow(va)
+                ax.set_title('Ablation')
+
+                ax = fig.add_subplot(1, 4, 4)
+                ve = Image.fromarray(visualization_e, 'RGB')
+                plt.imshow(ve)
+                ax.set_title('Eigen')
+                plt.savefig(f"pytorch_grad_cam/cam_images/{name}.png")
+                plt.close(fig)
+                plt.close()
+                fig.clf()
 
         # update metric
         losses.update(loss.item(), bsz)
@@ -361,26 +350,13 @@ def main():
     # tensorboard
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
 
-
-    cam = None
-    if 'cut' in opt.aug:
-        cam_method = opt.aug.split('_')[2]
-        if cam_method == 'PP':
-            cam = GradCAMPlusPlus(model=model.module, target_layer=model.module.encoder.layer4[-1], use_cuda=True) # module if dataparallel
-        elif cam_method == 'AB':
-            cam = AblationCAM(model=model.module, target_layer=model.module.encoder.layer4[-1], use_cuda=True) 
-        elif cam_method == 'EI':
-            cam = EigenCAM(model=model.module, target_layer=model.module.encoder.layer4[-1], use_cuda=True) 
-        else:
-            raise NotImplementedError("not supported type of cam method")
-
     # training routine
     for epoch in range(1, opt.epochs + 1):
         adjust_learning_rate(opt, optimizer, epoch)
 
         # train for one epoch
         time1 = time.time()
-        loss, train_acc = train(loaders['train'], model, criterion, optimizer, epoch, opt, cam=cam)
+        loss, train_acc = train(loaders['train'], model, criterion, optimizer, epoch, opt)
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 

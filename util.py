@@ -9,6 +9,7 @@ import os.path as osp
 from sklearn.metrics import accuracy_score
 from RandAugment import rand_augment_transform
 import torch.nn as nn
+import random
 
 
 class GaussianBlur(object):
@@ -90,7 +91,7 @@ def get_transform(opt, mean, std, scale):
             transforms.RandomResizedCrop(size=opt.size, scale= scale),
             transforms.RandomHorizontalFlip(),
             transforms.RandomApply([
-                transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)
+                transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
             ], p=0.8),
             transforms.RandomApply([GaussianBlur(opt.size//10)], p=0.5),
             rand_augment_transform('rand-n{}-m{}-mstd0.5'.format(n, m),
@@ -117,10 +118,67 @@ def get_transform(opt, mean, std, scale):
             transforms.ToTensor(),
             normalize,
         ])
+    elif 'cut' in opt.aug.lower():
+        TF = transforms.Compose([
+            transforms.RandomResizedCrop(size=opt.size, scale= scale),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalize
+    ])
     else:
         raise NotImplementedError("Unsupported augmentaton name")
 
     return TF
+
+
+
+
+def bbox2(img):
+    assert img.ndim == 2
+    rows = np.any(img, axis=1)
+    cols = np.any(img, axis=0)
+    rmin, rmax = np.where(rows)[0][[0, -1]]
+    cmin, cmax = np.where(cols)[0][[0, -1]]
+
+    return rmin, rmax, cmin, cmax
+
+def rand_bbox(size, lam, bbs = None):
+    W = size[2] # 순서 잘못된 듯?
+    H = size[3]
+    cut_rat = np.sqrt(1. - lam)
+    cut_w = np.int(W * cut_rat)
+    cut_h = np.int(H * cut_rat)
+
+    cx = np.random.randint(W)
+    cy = np.random.randint(H)
+
+    bbx1 = np.clip(cx - cut_w // 2, 0, W)
+    bby1 = np.clip(cy - cut_h // 2, 0, H)
+    bbx2 = np.clip(cx + cut_w // 2, 0, W)
+    bby2 = np.clip(cy + cut_h // 2, 0, H)
+
+    if bbs is not None:
+        bx1, bx2, by1, by2 = bbs
+        mask = np.zeros((W,H))
+        mask[bx1:bx2, by1:by2] +=1
+        mask[bbx1:bbx2, bby1:bby2] +=1
+        if 2 in mask:
+            rmin, rmax, cmin, cmax = bbox2(mask==2) # overlapped area
+            min_mask = min(rmax-rmin, cmax-cmin)
+            cut_w -= (2*min_mask + 2) # 2 is margin
+            cut_w = max(cut_w, 0)
+            cut_h = cut_w # if square
+            bbx1 = np.clip(cx - cut_w // 2, 0, W)
+            bby1 = np.clip(cy - cut_h // 2, 0, H)
+            bbx2 = np.clip(cx + cut_w // 2, 0, W)
+            bby2 = np.clip(cy + cut_h // 2, 0, H)
+
+            mask = np.zeros((W,H))
+            mask[bx1:bx2, by1:by2] +=1
+            mask[bbx1:bbx2, bby1:bby2] +=1
+            assert 2 not in mask
+            
+    return bbx1, bby1, bbx2, bby2
 
 def load_image_names(data_dir, util_rate, opt):
         imageset_dir = osp.join(data_dir, 'imageset/single_image.2class/fold.5-5/ratio/100%')
@@ -243,3 +301,12 @@ def best_accuracy(gts, probs):
             best_th = th
     
     return best_acc, best_th
+
+def denormalize(input): # (3,128,128)
+    mean = (0.485, 0.456, 0.406)
+    std = (0.229, 0.224, 0.225)
+    for i in range(3):
+        input[i,:,:] *= std[i]
+        input[i,:,:] += mean[i]
+    
+    return input
