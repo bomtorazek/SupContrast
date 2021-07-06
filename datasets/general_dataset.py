@@ -7,10 +7,6 @@ import torch
 import numpy as np
 from PIL import Image
 
-import albumentations as AB
-from albumentations.pytorch import ToTensor
-
-
 class GeneralDataset(torch.utils.data.Dataset):
     def __init__(self, data_dir,image_names, ext_data_dir=None, ext_image_names=None, transform=None ):
         self._data_dir = data_dir
@@ -18,8 +14,6 @@ class GeneralDataset(torch.utils.data.Dataset):
         self._image_names = image_names
         self._ext_data_dir = ext_data_dir
         self._ext_image_names = ext_image_names
-        
-
         
 
         anno_fname = 'single_image.2class.json'
@@ -41,9 +35,16 @@ class GeneralDataset(torch.utils.data.Dataset):
 
                 self._image_fpaths.append(image_fpath)
                 self._labels.append(label)
+        
 
-
-
+        # For grayscale images
+        np_img = np.array(Image.open(self._image_fpaths[0]))
+        if np_img.ndim == 2:
+            self.is_gray = True 
+        elif np_img.ndim == 3:
+            self.is_gray = False
+        else:
+            raise ValueError("This image might be RGBA, which is not supported yet.") 
 
     def __len__(self):
         return len(self._image_fpaths)
@@ -53,6 +54,9 @@ class GeneralDataset(torch.utils.data.Dataset):
 
         img_fpath = self._image_fpaths[index]
         img = (Image.open(img_fpath))
+        if self.is_gray:
+            img = img.convert('RGB')
+        # .convert('RGB')
         # if len(img.shape) == 2: # gray
         #     img = np.stack([img, img, img], axis=-1)
         # image_dict['image'] = img

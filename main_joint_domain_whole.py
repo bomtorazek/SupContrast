@@ -85,13 +85,7 @@ def set_loader(opt):
         train_dataset = datasets.ImageFolder(root=opt.data_folder,
                                             transform=train_transform)
     else:
-        if 'MLCC' in opt.dataset:
-            opt.imgset_dir = 'fold.5-5/ratio/100%'
-        elif 'Vis' in opt.dataset:
-            opt.imgset_dir = 'fold.0'
-        else:
-            raise ValueError("Not supported dataset name")
-            
+        
         train_names_S, _, _ = load_image_names(opt.source_data_folder, 1.0, opt)
         train_names_T, val_names_T, test_names_T = load_image_names(opt.data_folder, opt.train_util_rate,opt)
         
@@ -170,7 +164,7 @@ def set_model(opt):
     return model, criterion
 
 
-def train(trainloader, model, criterion, optimizer, epoch, opt, cam):
+def train(trainloader, model, criterion, optimizer, epoch, opt, cam, CUTMIX=False):
     """one epoch training"""
     model.train()
 
