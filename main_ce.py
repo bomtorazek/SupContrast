@@ -22,7 +22,7 @@ from util import get_transform, rand_bbox, bbox2
 from util import AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate, accuracy, best_accuracy
 from util import set_optimizer, save_model
-from util import denormalize
+from util import denormalize, visualize_imgs, make_cutmix
 # from torchsampler import ImbalancedDatasetSampler
 from util import load_image_names
 from networks.resnet_big import SupCEResNet
@@ -159,68 +159,14 @@ def train(train_loader, model, criterion, optimizer, epoch, opt, CUTMIX = False,
         # warm-up learning rate
         warmup_learning_rate(opt, epoch, idx, len(train_loader), optimizer)
 
-
         # compute loss
-        r = np.random.rand(1)
-        if CUTMIX and r < cutmix_prob:
-
-            ng_imgs = images[labels == 1]
-            grayscale_cam= cam(input_tensor=ng_imgs, target_category=1) # (n_ng,h,w) numpy 0~1
-            cam_mask = grayscale_cam >= 0.7 #  (n_ng,h,w)
-
-            ng_outputs = model(ng_imgs) # FIXME double forwards
-            soft_output = m(ng_outputs) # n_ng, 2
-
-            lam = np.random.beta(1.0, 1.0)
-            rand_index = torch.randperm(images.size()[0]).cuda()
-            labels_a = labels
-            labels_b = labels[rand_index]
-            cutmix_labels = torch.zeros_like(labels)
-
-            bbx1, bby1, bbx2, bby2 = rand_bbox(images.size(), lam)
-            ng_iidx = [iid for iid in range(len(labels)) if labels[iid] == 1 ] # ng인 애들 
-
-            for iidx in range(bsz):
-                iidx_b = rand_index[iidx]
-                if labels_a[iidx] == 0:
-                    if labels_b[iidx] == 0: # ok <- ok: ok, random box of cutmix
-                        pass
-                        images[iidx, :, bbx1:bbx2, bby1:bby2] = images[iidx_b, :, bbx1:bbx2, bby1:bby2]
-                    elif labels_b[iidx] == 1: # ok <- ng: to ng, cut defect-region
-                        ng_id = ng_iidx.index(iidx_b) # iidx_b가 ng_iidx에서 몇 번째인지
-                        if soft_output[ng_id, 1] >= 0.9:
-                            bbx1, bbx2, bby1, bby2 = bbox2(cam_mask[ng_id,:,:]) # bounding box 추출
-                            images[iidx, :, bbx1:bbx2, bby1:bby2] = images[iidx_b, :, bbx1:bbx2, bby1:bby2]
-                            cutmix_labels[iidx] = 1
-                    else:
-                        raise ValueError("fucked label")
-                elif labels_a[iidx] == 1: 
-                    if labels_b[iidx] == 0:  # ng <- ok: ng, cut non-defect-region
-                        ng_id = ng_iidx.index(iidx)
-                        if soft_output[ng_id, 1] >= 0.9:
-                            bbs = bbox2(cam_mask[ng_id,:,:]) # bounding box 추출
-                            bbx1, bby1, bbx2, bby2 = rand_bbox(images.size(), lam, bbs) # 겹치면 빼기
-                            images[iidx, :, bbx1:bbx2, bby1:bby2] = images[iidx_b, :, bbx1:bbx2, bby1:bby2]
-                        cutmix_labels[iidx] = 1 
-
-                    elif labels_b[iidx] == 1: # ng <- ng: ng, cut defect-region (box)
-                        ng_id = ng_iidx.index(iidx_b) # real_iidx가 ng_idx에서 몇 번째인지
-                        if soft_output[ng_id, 1] >= 0.9:
-                            bbx1, bbx2, bby1, bby2 = bbox2(cam_mask[ng_id,:,:]) # bounding box 추출
-                            images[iidx, :, bbx1:bbx2, bby1:bby2] = images[iidx_b, :, bbx1:bbx2, bby1:bby2]
-                        cutmix_labels[iidx] = 1
-
-                    else:
-                        raise ValueError("fucked label")
-                else:
-                    raise ValueError("fucked label")
-            # ROI는 곱하기로 alpha blending 하면 된다.
+        if CUTMIX:
+            r = np.random.rand(1)
+            if r < cutmix_prob:
+                images, labels = make_cutmix(images=images, labels=labels, model=model, cam=cam, m=m, bsz=bsz, epoch=epoch)
 
         output = model(images)
-        if CUTMIX and r < cutmix_prob:
-            loss = criterion(output, cutmix_labels)
-        else:
-            loss = criterion(output, labels)
+        loss = criterion(output, labels)
 
         # update metric
         losses.update(loss.item(), bsz)

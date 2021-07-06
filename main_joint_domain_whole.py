@@ -17,6 +17,7 @@ import numpy as np
 from util import TwoCropTransform, get_transform
 from util import adjust_learning_rate, warmup_learning_rate,accuracy, best_accuracy, AverageMeter
 from util import set_optimizer, save_model
+from util import make_cutmix, make_cutmix_ext
 from networks.resnet_big import SupHybResNet
 from losses import SupConLoss, CrossSupConLoss
 from config import parse_option
@@ -84,6 +85,13 @@ def set_loader(opt):
         train_dataset = datasets.ImageFolder(root=opt.data_folder,
                                             transform=train_transform)
     else:
+        if 'MLCC' in opt.dataset:
+            opt.imgset_dir = 'fold.5-5/ratio/100%'
+        elif 'Vis' in opt.dataset:
+            opt.imgset_dir = 'fold.0'
+        else:
+            raise ValueError("Not supported dataset name")
+            
         train_names_S, _, _ = load_image_names(opt.source_data_folder, 1.0, opt)
         train_names_T, val_names_T, test_names_T = load_image_names(opt.data_folder, opt.train_util_rate,opt)
         
@@ -162,7 +170,7 @@ def set_model(opt):
     return model, criterion
 
 
-def train(trainloader, model, criterion, optimizer, epoch, opt):
+def train(trainloader, model, criterion, optimizer, epoch, opt, cam):
     """one epoch training"""
     model.train()
 
@@ -175,6 +183,13 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
         losses_Con = AverageMeter()
     end = time.time()
 
+    if 'cut' in opt.aug:
+        CUTMIX = True
+        spt = opt.aug.split('_')
+        cutmix_prob = float(spt[1])
+        cutmix_type = spt[3]
+        m = torch.nn.Softmax(dim=1)
+
     for idx, (images, labels) in enumerate(trainloader):   
         data_time.update(time.time() - end)
         bsz = labels.shape[0]
@@ -186,13 +201,29 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
             warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
 
             # compute loss
+            if CUTMIX:
+                r = np.random.rand(1)
+                if r < cutmix_prob:
+                    images, labels = make_cutmix(images=images, labels=labels, model=model, cam=cam, m=m, bsz=bsz, epoch=epoch)
+
+            
             _, output = model(images)
             loss_CE = criterion(output, labels)
+
             
         elif opt.method == 'Joint_Con_Whole':
             
+            images[0] = images[0].cuda(non_blocking=True)
+            images[1] = images[1].cuda(non_blocking=True)
+
+            if CUTMIX:
+                r = np.random.rand(1)
+                if r < cutmix_prob:
+                    images[0], images[1], labels = make_cutmix_ext(images=images[0], labels=labels, model=model,
+                                                    cam=cam, m=m, bsz=bsz, epoch=epoch, ext_images=images[1], type_=cutmix_type)
+
+            # 여기서 view 같은 방식으로 처리하고 합치자
             images = torch.cat([images[0], images[1]], dim=0)
-            images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
             labels_aug = torch.cat([labels, labels], dim=0)
             
@@ -392,13 +423,28 @@ def main():
     # tensorboard
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
 
+
+
+
+    cam = None
+    if 'cut' in opt.aug:
+        cam_method = opt.aug.split('_')[2]
+        if cam_method == 'PP':
+            cam = GradCAMPlusPlus(model=model.module, target_layer=model.module.encoder.layer4[-1], use_cuda=True) # module if dataparallel
+        elif cam_method == 'AB':
+            cam = AblationCAM(model=model.module, target_layer=model.module.encoder.layer4[-1], use_cuda=True) 
+        elif cam_method == 'EI':
+            cam = EigenCAM(model=model.module, target_layer=model.module.encoder.layer4[-1], use_cuda=True) 
+        else:
+            raise NotImplementedError("not supported type of cam method")
+
     # training routine
     for epoch in range(1, opt.epochs + 1):
         adjust_learning_rate(opt, optimizer, epoch)
 
         # train for one epoch
         time1 = time.time()
-        loss, train_acc = train(loaders['train'], model, criterion, optimizer, epoch, opt)
+        loss, train_acc = train(loaders['train'], model, criterion, optimizer, epoch, opt,cam=cam)
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
