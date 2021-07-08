@@ -44,6 +44,7 @@ def parse_option():
     parser.add_argument('--dataset', type=str, default='cifar10',
                          help='dataset')
     parser.add_argument('--imgset_dir', type=str, default='fold.5-5/ratio/100%')
+    parser.add_argument('--new_imgset', type=bool, default=False)
     parser.add_argument('--mean', type=str, help='mean of dataset in path in form of str tuple')
     parser.add_argument('--std', type=str, help='std of dataset in path in form of str tuple')
     parser.add_argument('--data_folder', type=str, default=None, help='target')
@@ -92,6 +93,7 @@ def parse_option():
         opt.imgset_dir = 'fold.5-5/ratio/100%'
     elif 'vis' in opt.dataset.lower():
         opt.imgset_dir = 'fold.0'
+        opt.new_imgset = True
     else:
         raise ValueError("Not supported dataset name")
 

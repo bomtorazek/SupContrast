@@ -68,7 +68,20 @@ class TwoCropTransform:
 def get_transform(opt, mean, std, scale):
 
     normalize = transforms.Normalize(mean=mean, std=std)
-    if opt.aug.lower() == 'sim':
+    if opt.aug.lower() == 'nothing':
+        TF = transforms.Compose([
+            transforms.Resize(opt.size),
+            transforms.ToTensor(),
+            normalize,
+    ])
+    elif opt.aug.lower() == 'flip':
+        TF = transforms.Compose([
+            transforms.Resize(opt.size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalize,
+    ])
+    elif opt.aug.lower() == 'sim':
         TF = transforms.Compose([
             transforms.RandomResizedCrop(size=opt.size, scale= scale),
             transforms.RandomHorizontalFlip(),
@@ -272,23 +285,31 @@ def rand_bbox(size, lam, bbs = None):
     return bbx1, bby1, bbx2, bby2
 
 def load_image_names(data_dir, util_rate, opt):
-        imageset_dir = osp.join(data_dir, 'imageset/single_image.2class',opt.imgset_dir)
+    imageset_dir = osp.join(data_dir, 'imageset/single_image.2class',opt.imgset_dir)
+    
+    if opt.new_imgset and util_rate < 1.0:
+        print('new_imageset of vistakon is being used')
+        with open(osp.join(imageset_dir, 'train.{}-{}-ur{}.txt'.format(opt.test_fold, opt.val_fold,util_rate)), 'r') as fid:
+            temp = fid.read()
+        train_names = temp.split('\n')[:-1]   
+    else:
         with open(osp.join(imageset_dir, 'train.{}-{}.txt'.format(opt.test_fold, opt.val_fold)), 'r') as fid:
             temp = fid.read()
         train_names = temp.split('\n')[:-1]
-        with open(osp.join(imageset_dir, 'validation.{}-{}.txt'.format(opt.test_fold, opt.val_fold)), 'r') as fid:
-            temp = fid.read()
-        val_names = temp.split('\n')[:-1]
-        with open(osp.join(imageset_dir, 'test.{}.txt'.format(opt.test_fold)), 'r') as fid:
-            temp = fid.read()
-        test_names = temp.split('\n')[:-1]
-        
-        if util_rate < 1:
-            num_used = int(len(train_names) * util_rate)
-            np.random.seed(1)
-            train_names = np.random.choice(train_names, size=num_used, replace=False)
 
-        return train_names, val_names, test_names
+    with open(osp.join(imageset_dir, 'validation.{}-{}.txt'.format(opt.test_fold, opt.val_fold)), 'r') as fid:
+        temp = fid.read()
+    val_names = temp.split('\n')[:-1]
+    with open(osp.join(imageset_dir, 'test.{}.txt'.format(opt.test_fold)), 'r') as fid:
+        temp = fid.read()
+    test_names = temp.split('\n')[:-1]
+    
+    if util_rate < 1 and not opt.new_imgset:
+        num_used = int(len(train_names) * util_rate)
+        np.random.seed(1)
+        train_names = np.random.choice(train_names, size=num_used, replace=False)
+
+    return train_names, val_names, test_names
 
 
 def make_cutmix(images, labels, model, cam, m,bsz,epoch):
