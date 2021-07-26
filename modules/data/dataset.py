@@ -1,11 +1,9 @@
-import os
 import os.path as osp
 import json
-from glob import glob
-
 import torch
 import numpy as np
 from PIL import Image
+
 
 class GeneralDataset(torch.utils.data.Dataset):
     def __init__(self, data_dir,image_names, ext_data_dir=None, ext_image_names=None, transform=None ):
@@ -76,3 +74,5 @@ class GeneralDataset(torch.utils.data.Dataset):
         assert self.__len__() > 0
         image_dict, _ = self.__getitem__(0)
         return image_dict['image'].shape[0]
+
+

@@ -4,148 +4,14 @@ import math
 import numpy as np
 import torch
 import torch.optim as optim
-from torchvision import transforms
-import os.path as osp
+
 from sklearn.metrics import accuracy_score
-from RandAugment import rand_augment_transform
-import torch.nn as nn
+
+
 import random
 import matplotlib.pyplot as plt
 from PIL import Image
 import cv2
-
-
-class GaussianBlur(object):
-    """blur a single image on CPU"""
-    def __init__(self, kernel_size):
-        radias = kernel_size // 2
-        kernel_size = radias * 2 + 1
-        self.blur_h = nn.Conv2d(3, 3, kernel_size=(kernel_size, 1),
-                                stride=1, padding=0, bias=False, groups=3)
-        self.blur_v = nn.Conv2d(3, 3, kernel_size=(1, kernel_size),
-                                stride=1, padding=0, bias=False, groups=3)
-        self.k = kernel_size
-        self.r = radias
-
-        self.blur = nn.Sequential(
-            nn.ReflectionPad2d(radias),
-            self.blur_h,
-            self.blur_v
-        )
-
-        self.pil_to_tensor = transforms.ToTensor()
-        self.tensor_to_pil = transforms.ToPILImage()
-
-    def __call__(self, img):
-        img = self.pil_to_tensor(img).unsqueeze(0)
-
-        sigma = np.random.uniform(0.1, 2.0)
-        x = np.arange(-self.r, self.r + 1)
-        x = np.exp(-np.power(x, 2) / (2 * sigma * sigma))
-        x = x / x.sum()
-        x = torch.from_numpy(x).view(1, -1).repeat(3, 1)
-
-        self.blur_h.weight.data.copy_(x.view(3, 1, self.k, 1))
-        self.blur_v.weight.data.copy_(x.view(3, 1, 1, self.k))
-
-        with torch.no_grad():
-            img = self.blur(img)
-            img = img.squeeze()
-
-        img = self.tensor_to_pil(img)
-
-        return img
-
-
-class TwoCropTransform:
-    """Create two crops of the same image"""
-    def __init__(self, transform):
-        self.transform = transform
-
-    def __call__(self, x):
-        return [self.transform(x), self.transform(x)]
-
-def get_transform(opt, mean, std, scale):
-
-    normalize = transforms.Normalize(mean=mean, std=std)
-    if opt.aug.lower() == 'nothing':
-        TF = transforms.Compose([
-            transforms.Resize(opt.size),
-            transforms.ToTensor(),
-            normalize,
-    ])
-    elif opt.aug.lower() == 'flip':
-        TF = transforms.Compose([
-            transforms.Resize(opt.size),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize,
-    ])
-    elif opt.aug.lower() == 'sim':
-        TF = transforms.Compose([
-            transforms.RandomResizedCrop(size=opt.size, scale= scale),
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomApply([
-                transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-            ], p=0.8),
-            transforms.RandomGrayscale(p=0.2),
-            transforms.ToTensor(),
-            normalize,
-    ])
-    elif 'stacked' in opt.aug.lower():
-        # stacked_ra_3_5
-        spt = opt.aug.split('_')
-        n = spt[-2]
-        m = spt[-1]
-        int(n)
-        int(m)
-        ra_params = dict(
-            translate_const=int(opt.size * 0.125),
-            img_mean=tuple([min(255, round(255 * x)) for x in mean]),
-            )
-        TF = transforms.Compose([
-            transforms.RandomResizedCrop(size=opt.size, scale= scale),
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomApply([
-                transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-            ], p=0.8),
-            transforms.RandomApply([GaussianBlur(opt.size//10)], p=0.5),
-            rand_augment_transform('rand-n{}-m{}-mstd0.5'.format(n, m),
-                                   ra_params),
-            transforms.RandomGrayscale(p=0.2),
-            transforms.ToTensor(),
-            normalize,
-        ])
-    elif 'rand' in opt.aug.lower():
-        spt = opt.aug.split('_')
-        n = spt[-2]
-        m = spt[-1]
-        int(n)
-        int(m)
-        ra_params = dict(
-            translate_const=int(opt.size * 0.125),
-            img_mean=tuple([min(255, round(255 * x)) for x in mean]),
-            )
-        TF = transforms.Compose([
-            transforms.RandomResizedCrop(size=opt.size, scale=scale),
-            transforms.RandomHorizontalFlip(),
-            rand_augment_transform('rand-n{}-m{}-mstd0.5'.format(n, m),
-                                    ra_params),
-            transforms.ToTensor(),
-            normalize,
-        ])
-    elif 'cut' in opt.aug.lower():
-        TF = transforms.Compose([
-            transforms.RandomResizedCrop(size=opt.size, scale= scale),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize
-    ])
-    else:
-        raise NotImplementedError("Unsupported augmentaton name")
-
-    return TF
-
 
 def denormalize(input): # (3,128,128)
     mean = (0.485, 0.456, 0.406)
@@ -284,32 +150,6 @@ def rand_bbox(size, lam, bbs = None):
             
     return bbx1, bby1, bbx2, bby2
 
-def load_image_names(data_dir, util_rate, opt):
-    imageset_dir = osp.join(data_dir, 'imageset/single_image.2class',opt.imgset_dir)
-    
-    if opt.new_imgset and util_rate < 1.0:
-        print('new_imageset of vistakon is being used')
-        with open(osp.join(imageset_dir, 'train.{}-{}-ur{}.txt'.format(opt.test_fold, opt.val_fold,util_rate)), 'r') as fid:
-            temp = fid.read()
-        train_names = temp.split('\n')[:-1]   
-    else:
-        with open(osp.join(imageset_dir, 'train.{}-{}.txt'.format(opt.test_fold, opt.val_fold)), 'r') as fid:
-            temp = fid.read()
-        train_names = temp.split('\n')[:-1]
-
-    with open(osp.join(imageset_dir, 'validation.{}-{}.txt'.format(opt.test_fold, opt.val_fold)), 'r') as fid:
-        temp = fid.read()
-    val_names = temp.split('\n')[:-1]
-    with open(osp.join(imageset_dir, 'test.{}.txt'.format(opt.test_fold)), 'r') as fid:
-        temp = fid.read()
-    test_names = temp.split('\n')[:-1]
-    
-    if util_rate < 1 and not opt.new_imgset:
-        num_used = int(len(train_names) * util_rate)
-        np.random.seed(1)
-        train_names = np.random.choice(train_names, size=num_used, replace=False)
-
-    return train_names, val_names, test_names
 
 
 def make_cutmix(images, labels, model, cam, m,bsz,epoch):
@@ -383,6 +223,8 @@ def make_cutmix(images, labels, model, cam, m,bsz,epoch):
 
 def make_cutmix_ext(images, labels, model, cam, m,bsz,epoch, ext_images, type_):
     ng_imgs = images[labels == 1]
+    if ng_imgs.shape[0] == 0:
+        return images, ext_images, labels
     grayscale_cam= cam(input_tensor=ng_imgs, target_category=1) # (n_ng,h,w) numpy 0~1
     cam_mask = grayscale_cam >= 0.7 #  (n_ng,h,w)
     _, ng_outputs = model(ng_imgs) # FIXME double forwards
@@ -541,18 +383,6 @@ def set_optimizer(opt, model):
     return optimizer
 
 
-def save_model(model, optimizer, opt, epoch, save_file):
-    print('==> Saving...')
-    state = {
-        'opt': opt,
-        'model': model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'epoch': epoch,
-    }
-    torch.save(state, save_file)
-    del state
-
-
 def best_accuracy(gts, probs):
     best_th = 0.0
     best_acc = 0.0
@@ -560,7 +390,7 @@ def best_accuracy(gts, probs):
         th = th/200.0
         acc = accuracy_score(gts, probs>=th)
 
-        if acc > best_acc:
+        if acc >= best_acc:
             best_acc = acc
             best_th = th
     

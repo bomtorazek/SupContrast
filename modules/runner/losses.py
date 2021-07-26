@@ -91,7 +91,7 @@ class SupConLoss(nn.Module):
         # compute log_prob
         exp_logits = torch.exp(logits) * logits_mask # logits_mask는 자기 자신만 제외함.
         log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
-            # eq(2) 분모                eq(2) 분자
+            # eq(2) 분자                eq(2) 분모
 
         # compute mean of log-likelihood over positive
         mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)

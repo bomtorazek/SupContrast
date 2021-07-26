@@ -13,7 +13,7 @@ import torch
 import torch.backends.cudnn as cudnn
 import numpy as np
 from torchvision import transforms, datasets
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, f1_score, accuracy_score
 import matplotlib.pyplot as plt
 from PIL import Image
 
@@ -23,18 +23,14 @@ from util import AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate, accuracy, best_accuracy
 from util import set_optimizer, save_model
 from util import denormalize, visualize_imgs, make_cutmix
-# from torchsampler import ImbalancedDatasetSampler
+from config import parse_option
 from util import load_image_names
 from networks.resnet_big import SupCEResNet
 from pytorch_grad_cam import GradCAM, ScoreCAM, GradCAMPlusPlus, AblationCAM, XGradCAM, EigenCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 
-try:
-    import apex
-    from apex import amp, optimizers
-except ImportError:
-    pass
-from config import parse_option
+
+
 
 def set_loader(opt):
     # construct data loader
@@ -146,6 +142,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt, CUTMIX = False,
         CUTMIX = True
         spt = opt.aug.split('_')
         cutmix_prob = float(spt[1])
+        cutmix_type = spt[3]
         m = torch.nn.Softmax(dim=1)
         
 
@@ -242,26 +239,37 @@ def validate(val_loader, model, criterion, opt):
     gts = np.array(gts)
     probs = np.array(probs)
     auc = roc_auc_score(gts, probs)
-    best_acc, best_th = best_accuracy(gts,probs)
+    f1 = f1_score(gts, probs>=0.5)
+    acc = accuracy_score(gts,probs>=0.5)
     print('Val auc: {:.3f}'.format(auc), end = ' ')
-    print('Val acc: {:.3f}'.format(best_acc) )
+    print('Val acc: {:.3f}'.format(acc), end = ' ' )
+    print('Val f1: {:.3f}'.format(f1) )
     
-    return losses.avg, auc, best_acc, best_th
+    return losses.avg, auc, acc,  f1
 
-def test(test_loader, model,  opt, best_th = None):
+def test(test_loader, model,  opt, best_th = None, metric=None):
     model.eval()
 
     probs = []
     gts = []
 
-    if best_th is None:
+    if metric == 'auc':
         pretrained_dict = torch.load(os.path.join(
                 opt.save_folder, 'auc_best.pth'))['model']
         model.load_state_dict(pretrained_dict)
-    else:
+    elif metric == 'f1':
+        pretrained_dict = torch.load(os.path.join(
+                opt.save_folder, 'f1_best.pth'))['model']
+        model.load_state_dict(pretrained_dict)
+    elif metric == 'acc':
         pretrained_dict = torch.load(os.path.join(
                 opt.save_folder, 'acc_best.pth'))['model']
         model.load_state_dict(pretrained_dict)
+    else:
+        raise ValueError("not supported metric")
+
+
+
 
 
     with torch.no_grad():
@@ -279,19 +287,27 @@ def test(test_loader, model,  opt, best_th = None):
     gts = np.array(gts)
     probs = np.array(probs)
 
-    if best_th is None:
+ 
+    if metric== 'auc':
         auc = roc_auc_score(gts, probs)
         return auc
-    else:
-        from sklearn.metrics import accuracy_score
-        acc = accuracy_score(gts, probs>=best_th)
+    elif metric == 'f1':
+        return f1_score(gts, probs>=0.5)
+    elif metric == 'acc':
+        acc = accuracy_score(gts, probs>=0.5)
         return acc 
+    else:
+        raise ValueError("not supported metirc")
+   
+
+
 
 
 def main():
     best_epoch = 0
     best_auc = 0.0
     best_acc = 0.0
+    best_f1 = 0.0
     opt = parse_option()
     os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
 
@@ -336,11 +352,11 @@ def main():
         logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
 
         # evaluation
-        loss, val_auc, val_acc, val_th = validate(loaders['val'], model, criterion, opt)
+        loss, val_auc, val_acc,  val_f1 = validate(loaders['val'], model, criterion, opt)
         logger.log_value('val_loss', loss, epoch)
         logger.log_value('val_auc', val_auc, epoch)
         logger.log_value('val_acc', val_acc, epoch)
-        logger.log_value('val_th', val_th, epoch)
+        logger.log_value('val_f1', val_f1, epoch)
 
 
         if val_auc > best_auc:
@@ -352,9 +368,14 @@ def main():
         if val_acc > best_acc:
             best_epoch = epoch
             best_acc = val_acc
-            best_th = val_th
             save_file = os.path.join(
                 opt.save_folder, 'acc_best.pth')
+            save_model(model, optimizer, opt, epoch, save_file)
+        if val_f1 > best_f1:
+            best_epoch = epoch
+            best_f1 = val_f1
+            save_file = os.path.join(
+                opt.save_folder, 'f1_best.pth')
             save_model(model, optimizer, opt, epoch, save_file)
         if epoch >= best_epoch + opt.patience:
             break
@@ -363,15 +384,17 @@ def main():
     #     opt.save_folder, 'last.pth')
     # save_model(model, optimizer, opt, opt.epochs, save_file)
 
-    best_auc = test(loaders['test'], model, opt)
-    best_acc = test(loaders['test'], model, opt, best_th)
-    print('Test auc: {:.2f}'.format(best_auc), end = ' ')
-    print('Test acc: {:.2f}'.format(best_acc) ,end = ' ')
-    print('Test th: {:.2f}'.format(best_th) ,end = ' ')
+    test_auc = test(loaders['test'], model, opt, metric='auc')
+    test_acc = test(loaders['test'], model, opt, metric = 'acc')
+    test_f1 = test(loaders['test'], model, opt, metric='f1')
+    print('Test auc: {:.2f}'.format(test_auc), end = ' ')
+    print('Test acc: {:.2f}'.format(test_acc) ,end = ' ')
+    print('Test acc: {:.2f}'.format(test_f1) ,end = ' ')
+
 
     with open("result.csv", "a") as file:
         writer = csv.writer(file)
-        row = [opt.model_name, 'auc', best_auc, 'acc', best_acc, 'th', best_th]
+        row = [opt.model_name, 'auc', test_auc, 'acc', test_acc, 'f1', test_f1]
         writer.writerow(row)
 
 

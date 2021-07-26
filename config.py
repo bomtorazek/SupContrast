@@ -44,21 +44,21 @@ def parse_option():
     parser.add_argument('--dataset', type=str, default='cifar10',
                          help='dataset')
     parser.add_argument('--imgset_dir', type=str, default='fold.5-5/ratio/100%')
-    parser.add_argument('--new_imgset', type=bool, default=False)
     parser.add_argument('--mean', type=str, help='mean of dataset in path in form of str tuple')
     parser.add_argument('--std', type=str, help='std of dataset in path in form of str tuple')
     parser.add_argument('--data_folder', type=str, default=None, help='target')
     parser.add_argument('--source_data_folder', type=str, default=None, help='source')
     parser.add_argument('--val_fold', type=int, default=1, help='validation fold')
     parser.add_argument('--test_fold', type=int, default=1, help='test fold')
+    parser.add_argument('--whole_data_train', action='store_true', default=False, help='whole data training, no validation set')
     parser.add_argument('--train_util_rate', type=float, default=1.0, help='train util rate')
     # parser.add_argument('--translate', type=int, default=16, help='translation augment')
     # parser.add_argument('--rotate90', type=bool, default=True, help='rotation augment')
-    parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop')
+    parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop or Resize')
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
-                        choices=['SupCon', 'SimCLR', 'Joint_Con', 'Joint_CE','Joint_Con_Whole', 'Joint_CE_Whole', 'CE'], help='choose method')
+                        choices=['SupCon', 'SimCLR', 'Joint_Con', 'Joint_CE', 'CE'], help='choose method')
 
     # temperature and hypers
     parser.add_argument('--temp', type=float, default=0.08,
@@ -93,15 +93,8 @@ def parse_option():
         opt.imgset_dir = 'fold.5-5/ratio/100%'
     elif 'vis' in opt.dataset.lower():
         opt.imgset_dir = 'fold.0'
-        opt.new_imgset = True
     else:
         raise ValueError("Not supported dataset name")
-
-    # check if dataset is path that passed required arguments
-    if opt.dataset == 'path':
-        assert opt.data_folder is not None \
-            and opt.mean is not None \
-            and opt.std is not None
 
     # set the path according to the environment
     if opt.data_folder is None:
@@ -114,10 +107,14 @@ def parse_option():
     for it in iterations:
         opt.lr_decay_epochs.append(int(it)) # [700,800,900] exponential lr decay default
 
-    opt.model_name = '{}_{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}_head_{}_trial_{}_fold_{}'.\
+    opt.model_name = '{}_{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}_trial_{}'.\
         format(opt.method, opt.dataset, opt.model, opt.train_util_rate, opt.epochs,opt.learning_rate,
-               opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp, opt.head, opt.trial, opt.val_fold)
+               opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp, opt.trial)
     # Joint, MLCC, ResNet18, 0.001, 1e-4, bs, temp, 
+    if opt.whole_data_train:
+        opt.model_name += 'whole_data'
+    else:
+        opt.model_name += f'_fold_{opt.val_fold}'
 
     if opt.cosine:
         opt.model_name = '{}_cosine'.format(opt.model_name)
