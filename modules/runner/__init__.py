@@ -81,7 +81,7 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
         optimizer.zero_grad()
         total_loss = loss_CE
         if opt.method == 'Joint_Con':
-            total_loss += opt.l_con * loss_Con 
+            total_loss = total_loss*opt.l_ce + loss_Con 
         total_loss.backward()
         optimizer.step()
 

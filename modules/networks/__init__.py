@@ -10,7 +10,8 @@ def set_model(opt):
     if opt.method == 'Joint_Con':
         model = SupHybResNet(name=opt.model, feat_dim=opt.feat_dim,num_classes=opt.num_cls) 
         criterion = {}
-        criterion['Con'] = SupConLoss(temperature=opt.temp)
+        criterion['Con'] = SupConLoss(temperature=opt.temp, 
+                                    remove_pos_denom=opt.remove_pos_denom)
         criterion['CE'] = torch.nn.CrossEntropyLoss() 
     elif 'CE' in opt.method:
         model = SupCEResNet(name=opt.model, num_classes=opt.num_cls)

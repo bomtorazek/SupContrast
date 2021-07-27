@@ -63,7 +63,7 @@ def parse_option():
     # temperature and hypers
     parser.add_argument('--temp', type=float, default=0.08,
                         help='temperature for loss function')
-    parser.add_argument('--l_con', type=float, default=2.0,
+    parser.add_argument('--l_ce', type=float, default=1.0,
                         help='lambda for cont loss')
     parser.add_argument('--head', type=str, default='mlp',
                         choices=['mlp', 'fc'],
@@ -73,7 +73,9 @@ def parse_option():
     parser.add_argument('--aug', type=str, default='sim',
                         help='augmentation type, rand_3_5, cutmix_0.5_PP or AB or EI, stacked_rand_2_10 ')
     parser.add_argument('--dp', action='store_true', default=False,
-                        help='data parallel for whole model ')
+                        help='data parallel for whole model, dp for encoder by default ')
+    parser.add_argument('--remove_pos_denom', action='store_true', default=False,
+                        help='remove positives from denominator ')
                    
 
 
@@ -111,10 +113,15 @@ def parse_option():
         format(opt.method, opt.dataset, opt.model, opt.train_util_rate, opt.epochs,opt.learning_rate,
                opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp, opt.trial)
     # Joint, MLCC, ResNet18, 0.001, 1e-4, bs, temp, 
+    
+    if opt.remove_pos_denom:
+        opt.model_name += '_remove_pos'
+    
     if opt.whole_data_train:
-        opt.model_name += 'whole_data'
+        opt.model_name += '_whole_data'
     else:
         opt.model_name += f'_fold_{opt.val_fold}'
+    
 
     if opt.cosine:
         opt.model_name = '{}_cosine'.format(opt.model_name)

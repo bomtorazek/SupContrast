@@ -12,11 +12,12 @@ class SupConLoss(nn.Module):
     """Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf.
     It also supports the unsupervised contrastive loss in SimCLR"""
     def __init__(self, temperature=0.07, contrast_mode='all',
-                 base_temperature=0.07):
+                 base_temperature=0.07, remove_pos_denom=False):
         super(SupConLoss, self).__init__()
         self.temperature = temperature
         self.contrast_mode = contrast_mode
         self.base_temperature = base_temperature
+        self.rem_pos_denom = remove_pos_denom
 
     def forward(self, features, labels=None, mask=None):
         """Compute loss for model. If both `labels` and `mask` are None,
@@ -86,12 +87,21 @@ class SupConLoss(nn.Module):
         )
         # 그냥 ones에서 diagonal만 0으로 바꾸는 코드인데 어렵게 짬.
 
+        if self.rem_pos_denom:
+            inverse_mask = 1 - mask # True if other labels are matched
+      
         mask = mask * logits_mask
 
         # compute log_prob
         exp_logits = torch.exp(logits) * logits_mask # logits_mask는 자기 자신만 제외함.
-        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+
+        if self.rem_pos_denom:
+            # removes positives in the denominator. 자기 자신 + positive 제외 + for numerical stability when samples from the same labels came
+            log_prob = logits - torch.log((exp_logits*inverse_mask).sum(1, keepdim=True) + exp_logits + 1e-38)
+        else:
+            log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True)) # 자기 자신만 제외
             # eq(2) 분자                eq(2) 분모
+
 
         # compute mean of log-likelihood over positive
         mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)

@@ -116,7 +116,7 @@ def main():
         test_auc, test_acc, test_f1 = test(loaders['test'], model, opt, metric='last')
         print('Test auc: {:.4f}'.format(test_auc), end = ' ')
         print('Test acc: {:.4f}'.format(test_acc) ,end = ' ')
-        print('Test auc: {:.4f}'.format(test_f1))
+        print('Test f1: {:.4f}'.format(test_f1))
 
     import csv
     with open("result.csv", "a") as file:
