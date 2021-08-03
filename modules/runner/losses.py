@@ -99,14 +99,16 @@ class SupConLoss(nn.Module):
             # removes positives in the denominator. 자기 자신 + positive 제외 + for numerical stability when samples from the same labels came
             log_prob = logits - torch.log((exp_logits*inverse_mask).sum(1, keepdim=True) + exp_logits + 1e-38)
         else:
-            log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True)) # 자기 자신만 제외
+            # log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True)) # 자기 자신만 제외
+            mean_log_prob_pos = torch.log((exp_logits*mask).sum(1)) - torch.log(exp_logits.sum(1)) # 자기 자신만 제외
+            
             # eq(2) 분자                eq(2) 분모
 
 
         # compute mean of log-likelihood over positive
-        mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
+        # mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
         # mask를 이용해 positive pair에 대해서 계산
-
+       
         # loss
         loss = - (self.temperature / self.base_temperature) * mean_log_prob_pos
         loss = loss.view(anchor_count, batch_size).mean()

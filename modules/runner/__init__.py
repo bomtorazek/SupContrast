@@ -72,7 +72,7 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
         losses_CE.update(loss_CE.item(), bsz)
         if opt.method == 'Joint_Con':
             losses_Con.update(loss_Con.item(), bsz)
-        else:
+        elif 'CE' not in opt.method:
             raise ValueError("check method")  
         acc1, _ = accuracy(output[:bsz,:], labels[:bsz], topk=(1, 2))
         top1.update(acc1[0], bsz)
