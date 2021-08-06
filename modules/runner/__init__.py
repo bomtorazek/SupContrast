@@ -17,16 +17,17 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
     data_time = AverageMeter()
     losses_CE = AverageMeter()
     top1 = AverageMeter()
+    mask_prob = AverageMeter()
 
     if opt.method == 'Joint_Con':
         losses_Con = AverageMeter()
     end = time.time()
 
 
-    for idx, (images, labels) in enumerate(trainloader):   
+    for idx, (images, labels, domain_idx) in enumerate(trainloader):   
         data_time.update(time.time() - end)
         bsz = labels.shape[0]
-        if 'CE' in opt.method:
+        if opt.method == 'CE':
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
 
@@ -36,46 +37,90 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
             # compute loss
             output = model(images)
             loss_CE = criterion(output, labels)
+            effective_bsz = bsz
             
         elif opt.method == 'Joint_Con':
-            
             images[0] = images[0].cuda(non_blocking=True)
             images[1] = images[1].cuda(non_blocking=True)
+            t_mask = domain_idx == 0
+            s_mask = domain_idx == 1
+            if epoch >= opt.pseudo_epoch:
+                target_images0 = images[0][t_mask]
+                target_images1 = images[1][t_mask]
+                source_images0 = images[0][s_mask]
+                source_images1 = images[1][s_mask]
 
-            # if CUTMIX:
-            #     r = np.random.rand(1)
-            #     if r < cutmix_prob:
-            #         images[0], images[1], labels = make_cutmix_ext(images=images[0], labels=labels, model=model,
-            #                                         cam=cam, m=m, bsz=bsz, epoch=epoch, ext_images=images[1], type_=cutmix_type)
+                t_num = target_images0.shape[0]
+                assert target_images0.shape[0] + source_images0.shape[0] == bsz
 
-            images = torch.cat([images[0], images[1]], dim=0)
-            labels = labels.cuda(non_blocking=True)
+                images = torch.cat([target_images0, source_images0, target_images1, source_images1], dim=0)
+                features, output = model(images)
+                features0, features1 = features.chunk(2)
+                output0, output1 = output.chunk(2)
+
+                # target_output 사용해 pseudo label 생성, 두 view에 대해 같고 threshold를 넘어야
+                pseudo_soft0 = torch.softmax(output0[:t_num].detach(), dim=-1) 
+                pseudo_soft1 = torch.softmax(output1[:t_num].detach(), dim=-1) 
+                max_probs0, pseudo_label0 = torch.max(pseudo_soft0, dim=-1)
+                max_probs1, pseudo_label1 = torch.max(pseudo_soft1, dim=-1)
+                
+                mask0 = max_probs0.ge(opt.pseudo_threshold)
+                mask1 = max_probs1.ge(opt.pseudo_threshold)
+                label_mask = pseudo_label0 == pseudo_label1
+                mask = (mask0 * mask1 * label_mask)
+                pseudo_label = pseudo_label0[mask]
+                
+                # source_label + pseudo label
+                labels=labels.cuda(non_blocking=True)
+                labels = torch.cat([labels[s_mask], pseudo_label], dim=0)
+                # source_output + 살아남은 output
+                new_output0 = torch.cat([output0[t_num:],output0[:t_num][mask]], dim=0)
+                new_output1 = torch.cat([output1[t_num:],output1[:t_num][mask]], dim=0)
+                output = torch.cat([new_output0, new_output1], dim=0)
+                # source_feature + 살아남은 feature
+                new_features0 = torch.cat([features0[t_num:],features0[:t_num][mask]], dim=0)
+                new_features1 = torch.cat([features1[t_num:],features1[:t_num][mask]], dim=0)
+                features = torch.cat([new_features0, new_features1], dim=0)
+
+                assert features.shape[0] == output.shape[0]
+                assert features.shape[0] == 2*labels.shape[0]
+
+
+            else:
+                source_images0 = images[0][s_mask]
+                source_images1 = images[1][s_mask]
+                labels = labels[domain_idx == 1]
+
+                images = torch.cat([source_images0, source_images1], dim=0)
+                labels = labels.cuda(non_blocking=True)
+                features, output = model(images)
+                mask = None
+
             labels_aug = torch.cat([labels, labels], dim=0)
-            
             warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
 
-
             # compute loss
-            features, output = model(images)
-            if opt.head == 'mlp':
-                f1_T, f2_T = torch.split(features, [bsz, bsz], dim=0)
-            elif opt.head == 'fc':
-                f1_T, f2_T = torch.split(normalize(output,dim=1), [bsz, bsz], dim=0)
+            f1_T, f2_T = features.chunk(2)
+
             features_T = torch.cat([f1_T.unsqueeze(1), f2_T.unsqueeze(1)], dim=1)
             
             loss_Con = criterion['Con'](features_T, labels)
             loss_CE = criterion['CE'](output, labels_aug)
+            assert output.shape[0] %2 ==0
+            effective_bsz = int(output.shape[0]/2)
         else:
             raise ValueError("check method")  
 
         # update metric
-        losses_CE.update(loss_CE.item(), bsz)
+        if mask is not None:
+            mask_prob.update(mask.float().mean().item(), bsz)
+        losses_CE.update(loss_CE.item(), effective_bsz)
         if opt.method == 'Joint_Con':
-            losses_Con.update(loss_Con.item(), bsz)
+            losses_Con.update(loss_Con.item(), effective_bsz)
         elif 'CE' not in opt.method:
             raise ValueError("check method")  
-        acc1, _ = accuracy(output[:bsz,:], labels[:bsz], topk=(1, 2))
-        top1.update(acc1[0], bsz)
+        acc1, _ = accuracy(output[:effective_bsz,:], labels[:effective_bsz], topk=(1, 2))
+        top1.update(acc1[0], effective_bsz)
 
         # SGD
         optimizer.zero_grad()
@@ -100,9 +145,9 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
                    data_time=data_time, loss=losses_CE))
             sys.stdout.flush()
     if opt.method == 'Joint_Con':
-        return {'CE':losses_CE.avg, 'Con': losses_Con.avg}, top1.avg
+        return {'CE':losses_CE.avg, 'Con': losses_Con.avg}, top1.avg, mask_prob.avg
     elif 'CE' in opt.method:
-        return losses_CE.avg, top1.avg
+        return losses_CE.avg, top1.avg, None
     else:
         raise ValueError("check method")  
 
@@ -116,15 +161,13 @@ def validate(val_loader, model, criterion, opt):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
+    top5 = AverageMeter()
 
-    probs = []
-    gts = []
 
     with torch.no_grad():
         end = time.time()
-        for idx, (images, labels) in enumerate(val_loader):
+        for idx, (images, labels, _) in enumerate(val_loader):
             images = images.float().cuda()
-            gts.extend(labels.tolist())
             labels = labels.cuda()
             bsz = labels.shape[0]
 
@@ -132,8 +175,6 @@ def validate(val_loader, model, criterion, opt):
             output = model(images)
             if opt.method == 'Joint_Con':
                 output = output[1]
-            prob = torch.nn.functional.softmax(output, dim=1)[:,1]
-            probs.extend(prob.tolist())
             
             if opt.method == 'Joint_Con':
                 loss = criterion['CE'](output, labels)
@@ -145,8 +186,9 @@ def validate(val_loader, model, criterion, opt):
             # update metric
             losses.update(loss.item(), bsz)
 
-            acc1, acc2 = accuracy(output, labels, topk=(1, 2))
+            acc1, acc5 = accuracy(output, labels, topk=(1, 5))
             top1.update(acc1[0], bsz)
+            top5.update(acc5[0], bsz)
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -156,92 +198,13 @@ def validate(val_loader, model, criterion, opt):
                 print('Val: [{0}/{1}]\t'
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                      'Acc@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
+                      'Acc@1 {top1.val:.3f} ({top1.avg:.3f})'
+                      'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
                        idx, len(val_loader), batch_time=batch_time,
-                       loss=losses, top1=top1))
+                       loss=losses, top1=top1, top5=top5))
 
-    gts = np.array(gts)
-    probs = np.array(probs)
-    auc = roc_auc_score(gts, probs)
-    f1 = f1_score(gts, probs>=0.5)
-    best_acc, best_th = best_accuracy(gts,probs)
-    acc05 = accuracy_score(gts, probs>=0.5)
     
-    print('Val auc: {:.3f}'.format(auc), end = ' ')
-    print('Val bacc: {:.3f}'.format(best_acc), end = ' ')
-    print('Val f1: {:.3f}'.format(f1) )
-    print('Val acc: {:.3f}'.format(acc05) )
+    print('Val acc: {:.3f}'.format(top1.avg) )
     
-    return losses.avg, auc, best_acc, best_th, acc05, f1
+    return losses.avg, top1.avg, top5.avg
 
-
-
-def test(test_loader, model,  opt, metric=None, best_th = None):
-    model.eval()
-
-    probs = []
-    gts = []
-
-    if best_th is None:
-        if metric == 'auc':
-            pretrained_dict = torch.load(os.path.join(
-                    opt.save_folder, 'auc_best.pth'))['model']
-            model.load_state_dict(pretrained_dict)
-        elif metric == 'acc':
-            pretrained_dict = torch.load(os.path.join(
-                    opt.save_folder, 'acc05_best.pth'))['model']
-            model.load_state_dict(pretrained_dict)
-        elif metric == 'f1':
-            pretrained_dict = torch.load(os.path.join(
-                    opt.save_folder, 'f1_best.pth'))['model']
-            model.load_state_dict(pretrained_dict)
-        elif metric == 'last':
-            pretrained_dict = torch.load(os.path.join(
-                    opt.save_folder, 'last.pth'))['model']
-            model.load_state_dict(pretrained_dict)
-        else:
-            raise ValueError("not supported metric")
-    else:
-        pretrained_dict = torch.load(os.path.join(
-                opt.save_folder, 'bacc_best.pth'))['model']
-        model.load_state_dict(pretrained_dict)
-
-
-    with torch.no_grad():
-        for idx, (images, labels) in enumerate(test_loader):
-            images = images.float().cuda()
-            gts.extend(labels.tolist())
-            labels = labels.cuda()
-
-            # forward
-            output = model(images)
-            if opt.method == 'Joint_Con':
-                output = output[1] 
-            prob = torch.nn.functional.softmax(output, dim=1)[:,1]
-            probs.extend(prob.tolist())
-            
-
-    gts = np.array(gts)
-    probs = np.array(probs)
-
-    if best_th is None:
-        if metric == 'auc':
-            auc = roc_auc_score(gts, probs)
-            return auc
-        elif metric == 'acc':
-            acc = accuracy_score(gts, probs>=0.5)
-            return acc
-        elif metric == 'f1':
-            return f1_score(gts, probs>=0.5)
-        elif metric == 'last':
-            auc = roc_auc_score(gts, probs)
-            acc = accuracy_score(gts, probs>=0.5)
-            f1 = f1_score(gts, probs>=0.5)
-            return auc, acc, f1
-            
-        else:
-            raise ValueError("unsupported metric")
-    else:
-        bacc = accuracy_score(gts, probs>=best_th)
-        best_acc, best_th = best_accuracy(gts,probs)
-        return bacc, best_acc, best_th

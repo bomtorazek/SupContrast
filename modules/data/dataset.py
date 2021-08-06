@@ -1,78 +1,84 @@
-import os.path as osp
-import json
+import os
 import torch
-import numpy as np
 from PIL import Image
 
+class BasicDataset(torch.utils.data.Dataset):
+    def __init__(self):
+        pass
 
-class GeneralDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir,image_names, ext_data_dir=None, ext_image_names=None, transform=None ):
-        self._data_dir = data_dir
-        self._transform = transform
-        self._image_names = image_names
-        self._ext_data_dir = ext_data_dir
-        self._ext_image_names = ext_image_names
-        
-
-        anno_fname = 'single_image.2class.json'
-        self._anno_json = json.load(open(osp.join(data_dir, 'annotation', anno_fname), 'r'))
-
-        self._image_fpaths, self._labels = [], []
-        for image_name in self._image_names:
-            image_fpath = osp.join(data_dir, 'image', image_name)
-            label = self._anno_json['single_image'][image_name]['class'][0]
-
-            self._image_fpaths.append(image_fpath)
-            self._labels.append(label)
-
-        if self._ext_data_dir is not None:
-            self._ext_anno_json = json.load(open(osp.join(ext_data_dir, 'annotation', anno_fname), 'r'))
-            for image_name in self._ext_image_names:
-                image_fpath = osp.join(ext_data_dir, 'image', image_name)
-                label = self._ext_anno_json['single_image'][image_name]['class'][0]
-
-                self._image_fpaths.append(image_fpath)
-                self._labels.append(label)
-        
-
-        # For grayscale images
-        np_img = np.array(Image.open(self._image_fpaths[0]))
-        if np_img.ndim == 2:
-            self.is_gray = True 
-        elif np_img.ndim == 3:
-            self.is_gray = False
-        else:
-            raise ValueError("This image might be RGBA, which is not supported yet.") 
-
-    def __len__(self):
-        return len(self._image_fpaths)
+    def append_samples(self, samples, dir, cls_2_id, domain_idx=0):
+        for cls_folder in os.listdir(dir):
+            if os.path.isdir(os.path.join(dir,cls_folder)):
+                assert cls_folder in cls_2_id.keys()
+                for image in os.listdir(os.path.join(dir, cls_folder)):
+                    image_path = os.path.join(dir, cls_folder, image)
+                    samples.append([image_path, cls_2_id[cls_folder], domain_idx])
+        return samples
 
     def __getitem__(self, index):
-        # image_dict = {}
+        path, target, domain_idx = self.samples[index]
+        img = Image.open(path).convert('RGB')
+    
+        if self.transform is not None:
+            img = self.transform(img)
 
-        img_fpath = self._image_fpaths[index]
-        img = (Image.open(img_fpath))
-        if self.is_gray:
-            img = img.convert('RGB')
-        # .convert('RGB')
-        # if len(img.shape) == 2: # gray
-        #     img = np.stack([img, img, img], axis=-1)
-        # image_dict['image'] = img
-        # image_dict['path'] = img_fpath
+        return img, target, domain_idx
 
-        if self._transform is not None:
-            image = self._transform(img)
- 
-        return image, self._labels[index]
+    def __len__(self):
+        return len(self.samples)
 
-    @property
-    def labels(self):
-        return self._labels
 
-    @property
-    def num_channels(self):
-        assert self.__len__() > 0
-        image_dict, _ = self.__getitem__(0)
-        return image_dict['image'].shape[0]
+class OFFICE(BasicDataset):
+    def __init__(self, target_dir, source_dir = None, transform=None, num_cls=2):
+        super(OFFICE, self).__init__()
+        classes = ['back_pack', 'bike', 'bike_helmet', 'bookcase', 'bottle', 'calculator', 'desk_chair', 'desk_lamp',
+                   'desktop_computer', 'file_cabinet', 'headphones', 'keyboard', 'laptop_computer', 'letter_tray',
+                   'mobile_phone', 'monitor', 'mouse', 'mug', 'paper_notebook', 'pen', 'phone', 'printer',
+                   'projector', 'punchers', 'ring_binder', 'ruler', 'scissors', 'speaker', 'stapler',
+                   'tape_dispenser', 'trash_can']
+        assert len(classes) == num_cls
+        class_to_idx = {cls: i for i, cls in enumerate(classes)}
+        
+        self.samples = []
+        self.samples = self.append_samples(self.samples, target_dir, class_to_idx, domain_idx=0)
+        if source_dir is not None:
+            self.samples = self.append_samples(self.samples, source_dir, class_to_idx, domain_idx=1)
+        
+        self.transform = transform
 
+class VISDA(BasicDataset):
+    def __init__(self, target_dir, source_dir = None, transform=None, num_cls=2):
+        super(VISDA, self).__init__()
+        classes = ['aeroplane', 'bicycle', 'bus', 'car', 'horse', 'knife', 'motorcycle', 'person', 'plant',
+                   'skateboard', 'train', 'truck']
+        assert len(classes) == num_cls
+        class_to_idx = {cls: i for i, cls in enumerate(classes)}
+        
+        self.samples = []
+        self.samples = self.append_samples(self.samples, target_dir, class_to_idx, domain_idx=0)
+        if source_dir is not None:
+            self.samples = self.append_samples(self.samples, source_dir, class_to_idx, domain_idx=1)
+        
+        self.transform = transform
+
+
+class OFFICEHOME(BasicDataset):
+    def __init__(self, target_dir, source_dir = None, transform=None, num_cls=2):
+        super(OFFICEHOME, self).__init__()
+        classes = ['Alarm_Clock', 'Backpack', 'Batteries', 'Bed', 'Bike', 'Bottle', 'Bucket', 'Calculator', 'Calendar',
+                   'Candles', 'Chair', 'Clipboards', 'Computer', 'Couch', 'Curtains', 'Desk_Lamp', 'Drill', 'Eraser',
+                   'Exit_Sign', 'Fan', 'File_Cabinet', 'Flipflops', 'Flowers', 'Folder', 'Fork', 'Glasses', 'Hammer',
+                   'Helmet', 'Kettle', 'Keyboard', 'Knives', 'Lamp_Shade', 'Laptop', 'Marker', 'Monitor', 'Mop',
+                   'Mouse', 'Mug', 'Notebook', 'Oven', 'Pan', 'Paper_Clip', 'Pen', 'Pencil', 'Postit_Notes', 'Printer',
+                   'Push_Pin', 'Radio', 'Refrigerator', 'Ruler', 'Scissors', 'Screwdriver', 'Shelf', 'Sink', 'Sneakers',
+                   'Soda', 'Speaker', 'Spoon', 'TV', 'Table', 'Telephone', 'ToothBrush', 'Toys', 'Trash_Can', 'Webcam']
+        assert len(classes) == num_cls
+        class_to_idx = {cls: i for i, cls in enumerate(classes)}
+
+        self.samples = []
+        self.samples = self.append_samples(self.samples, target_dir, class_to_idx, domain_idx=0)
+        if source_dir is not None:
+            self.samples = self.append_samples(self.samples, source_dir, class_to_idx, domain_idx=1)
+        
+        self.transform = transform
 

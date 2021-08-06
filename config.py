@@ -17,13 +17,12 @@ def parse_option():
                         help='num of workers to use')
     parser.add_argument('--epochs', type=int, default=1000,
                         help='number of training epochs')
-    parser.add_argument('--gpu', type=str, default='0,1,2,3',
+    parser.add_argument('--gpu', type=str, default='0',
                         help='gpu')
-    parser.add_argument('--patience', type=int, default=200,
-                        help='patience for training')
+
 
     # optimization
-    parser.add_argument('--optimizer', type=str, default='ADAM')
+    parser.add_argument('--optimizer', type=str, default='SGD')
     parser.add_argument('--learning_rate', type=float, default=0.001,
                         help='learning rate') # 0.05 SGD
     parser.add_argument('--lr_decay_epochs', type=str, default='700,800,900',
@@ -37,31 +36,28 @@ def parse_option():
 
     # model dataset
     # network
-    parser.add_argument('--model', type=str, default='resnet18')
+    parser.add_argument('--model', type=str, default='resnet50')
     parser.add_argument('--num_cls', type=int, default=2)
     parser.add_argument('--model_transfer', type=str, default=None)
-  
-    parser.add_argument('--dataset', type=str, default='cifar10',
+    parser.add_argument('--dataset', type=str, default='office-31',
+                        choices=['office-31', 'office-home', 'visda'],
                          help='dataset')
-    parser.add_argument('--imgset_dir', type=str, default='fold.5-5/ratio/100%')
     parser.add_argument('--mean', type=str, help='mean of dataset in path in form of str tuple')
     parser.add_argument('--std', type=str, help='std of dataset in path in form of str tuple')
-    parser.add_argument('--data_folder', type=str, default=None, help='target')
-    parser.add_argument('--source_data_folder', type=str, default=None, help='source')
-    parser.add_argument('--val_fold', type=int, default=1, help='validation fold')
-    parser.add_argument('--test_fold', type=int, default=1, help='test fold')
-    parser.add_argument('--whole_data_train', action='store_true', default=False, help='whole data training, no validation set')
-    parser.add_argument('--train_util_rate', type=float, default=1.0, help='train util rate')
-    # parser.add_argument('--translate', type=int, default=16, help='translation augment')
-    # parser.add_argument('--rotate90', type=bool, default=True, help='rotation augment')
+    parser.add_argument('--target_folder', type=str, default=None, help='target')
+    parser.add_argument('--source_folder', type=str, default=None, help='source')
     parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop or Resize')
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
-                        choices=['SupCon', 'SimCLR', 'Joint_Con', 'Joint_CE', 'CE'], help='choose method')
+                        choices=['Joint_Con', 'Joint_CE', 'CE'], help='choose method')
 
     # temperature and hypers
-    parser.add_argument('--temp', type=float, default=0.08,
+    parser.add_argument('--pseudo_epoch', type=int, default=2,
+                        help='epoch for starting pseudo labeling')
+    parser.add_argument('--pseudo_threshold', type=float, default=0.8,
+                        help='threshold for pseudo labeling')    
+    parser.add_argument('--temp', type=float, default=0.07,
                         help='temperature for loss function')
     parser.add_argument('--l_ce', type=float, default=1.0,
                         help='lambda for cont loss')
@@ -74,16 +70,13 @@ def parse_option():
                         help='augmentation type, rand_3_5, cutmix_0.5_PP or AB or EI, stacked_rand_2_10 ')
     parser.add_argument('--dp', action='store_true', default=False,
                         help='data parallel for whole model, dp for encoder by default ')
-    parser.add_argument('--remove_pos_denom', action='store_true', default=False,
-                        help='remove positives from denominator ')
+    parser.add_argument('--loss_type', type=str, default='SupCon',
+                        choices=['SupCon', 'pos_denom', 'pos_numer'], help='choose loss')
+
                    
-
-
     # other setting
     parser.add_argument('--cosine', action='store_true',
                         help='using cosine annealing')
-    parser.add_argument('--syncBN', action='store_true',
-                        help='using synchronized batch normalization')
     parser.add_argument('--warm', action='store_true',
                         help='warm-up for large batch training')
     parser.add_argument('--trial', type=str, default='0',
@@ -91,16 +84,9 @@ def parse_option():
 
     opt = parser.parse_args()
 
-    if 'mlcc' in opt.dataset.lower():
-        opt.imgset_dir = 'fold.5-5/ratio/100%'
-    elif 'vis' in opt.dataset.lower():
-        opt.imgset_dir = 'fold.0'
-    else:
-        raise ValueError("Not supported dataset name")
+
 
     # set the path according to the environment
-    if opt.data_folder is None:
-        opt.data_folder = './datasets/'
     opt.model_path = './save/SupCon/{}_models'.format(opt.dataset)
     opt.tb_path = './save/SupCon/{}_tensorboard'.format(opt.dataset)
 
@@ -109,19 +95,11 @@ def parse_option():
     for it in iterations:
         opt.lr_decay_epochs.append(int(it)) # [700,800,900] exponential lr decay default
 
-    opt.model_name = '{}_{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}_trial_{}'.\
-        format(opt.method, opt.dataset, opt.model, opt.train_util_rate, opt.epochs,opt.learning_rate,
-               opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp, opt.trial)
-    # Joint, MLCC, ResNet18, 0.001, 1e-4, bs, temp, 
-    
-    if opt.remove_pos_denom:
-        opt.model_name += '_remove_pos'
-    
-    if opt.whole_data_train:
-        opt.model_name += '_whole_data'
-    else:
-        opt.model_name += f'_fold_{opt.val_fold}'
-    
+    opt.model_name = '{}_{}_{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}'.\
+        format(opt.method, opt.dataset, opt.model, opt.epochs,opt.learning_rate,
+               opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp)
+
+    opt.model_name += '_'+opt.loss_type
 
     if opt.cosine:
         opt.model_name = '{}_cosine'.format(opt.model_name)
@@ -139,6 +117,10 @@ def parse_option():
                     1 + math.cos(math.pi * opt.warm_epochs / opt.epochs)) / 2
         else:
             opt.warmup_to = opt.learning_rate
+    
+    target_domain = os.path.basename(opt.target_folder)
+    source_domain = os.path.basename(opt.source_folder)
+    opt.model_name += f'_{source_domain}2{target_domain}'
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name) # tensorboard
     if not os.path.isdir(opt.tb_folder):

@@ -136,7 +136,6 @@ def resnet50dsbn(pretrained=False, **kwargs):
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    print('wow!')
     model = DSBNResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
     if pretrained:
         updated_state_dict = _update_initial_weights_dsbn(model_zoo.load_url(model_urls['resnet50']),
@@ -276,7 +275,7 @@ class DSBNResNet(nn.Module):
 
         return TwoInputSequential(*layers)
 
-    def forward(self, x, domain_label, with_ft=False):
+    def forward(self, x, domain_label):
         x = self.conv1(x)
         x, _ = self.bn1(x, domain_label)
         x = self.relu(x)
