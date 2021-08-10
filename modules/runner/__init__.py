@@ -9,6 +9,17 @@ import numpy as np
 from util import AverageMeter, warmup_learning_rate, accuracy, best_accuracy
 
 
+
+def interleave(x, size): # for multi-gpu training, from kekmodel/FixMatch-pytorch
+    s = list(x.shape)
+    return x.reshape([-1, size] + s[1:]).transpose(0, 1).reshape([-1] + s[1:])
+
+
+def de_interleave(x, size):  # for multi-gpu training, from kekmodel/FixMatch-pytorch
+    s = list(x.shape)
+    return x.reshape([size, -1] + s[1:]).transpose(0, 1).reshape([-1] + s[1:])
+
+
 def train(trainloader, model, criterion, optimizer, epoch, opt):
     """one epoch training"""
     model.train()
@@ -72,7 +83,7 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
         losses_CE.update(loss_CE.item(), bsz)
         if opt.method == 'Joint_Con':
             losses_Con.update(loss_Con.item(), bsz)
-        else:
+        elif 'CE' not in opt.method:
             raise ValueError("check method")  
         acc1, _ = accuracy(output[:bsz,:], labels[:bsz], topk=(1, 2))
         top1.update(acc1[0], bsz)
@@ -105,6 +116,112 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
         return losses_CE.avg, top1.avg
     else:
         raise ValueError("check method")  
+
+def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
+    """one epoch training"""
+    model.train()
+
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    losses_CE = AverageMeter()
+    top1 = AverageMeter()
+
+    if opt.method == 'Joint_Con':
+        losses_Con = AverageMeter()
+    end = time.time()
+
+    trainloader_T = trainloader['target']
+    trainloader_S = trainloader['source']
+
+    iter_T = iter(trainloader_T)
+    iter_S = iter(trainloader_S)
+
+    for idx in range(len(trainloader_S)): # FIXME assume that # of source dataset is larger than # of target dataset
+        try: 
+            images_T, labels_T = iter_T.next()
+        except:
+            iter_T = iter(trainloader_T)
+            images_T, labels_T = iter_T.next()
+        images_S, labels_S = iter_S.next()
+
+        data_time.update(time.time() - end)
+        labels = torch.cat([labels_T, labels_S], dim=0)
+        labels = labels.cuda(non_blocking=True)
+        bsz = labels.shape[0]
+
+        if opt.method == 'Joint_CE':
+            images = torch.cat([images_T, images_S], dim=0)
+            images = images.cuda(non_blocking=True)
+
+            # warm-up learning rate
+            warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
+
+            # compute loss
+            output = model(images)
+            loss_CE = criterion(output, labels)
+            
+        elif opt.method == 'Joint_Con':
+            if idx ==0:
+                print(images_T[0].shape, 'target')
+                print(images_S[0].shape, 'source')
+            images0 = torch.cat([images_T[0], images_S[0]], dim=0)
+            images1 = torch.cat([images_T[1], images_S[1]], dim=0)
+
+            images = torch.cat([images0, images1], dim=0).cuda(non_blocking=True)
+            labels_aug = torch.cat([labels, labels], dim=0)
+            
+            warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
+
+            # compute loss
+            features, output = model(images)
+            if opt.head == 'mlp':
+                f0, f1 = torch.split(features, [bsz, bsz], dim=0)
+            elif opt.head == 'fc':
+                f0, f1 = torch.split(normalize(output,dim=1), [bsz, bsz], dim=0)
+            features = torch.cat([f0.unsqueeze(1), f1.unsqueeze(1)], dim=1)
+            
+            loss_Con = criterion['Con'](features, labels)
+            loss_CE = criterion['CE'](output, labels_aug)
+        else:
+            raise ValueError("check method")  
+
+        # update metric
+        losses_CE.update(loss_CE.item(), bsz)
+        if opt.method == 'Joint_Con':
+            losses_Con.update(loss_Con.item(), bsz)
+        elif 'CE' not in opt.method:
+            raise ValueError("check method")  
+        acc1, _ = accuracy(output[:bsz,:], labels[:bsz], topk=(1, 2))
+        top1.update(acc1[0], bsz)
+
+        # SGD
+        optimizer.zero_grad()
+        total_loss = loss_CE
+        if opt.method == 'Joint_Con':
+            total_loss = total_loss*opt.l_ce + loss_Con 
+        total_loss.backward()
+        optimizer.step()
+
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
+
+        # print info
+        if idx == len(trainloader_S)-1:
+        # if idx % 1 == 0:
+            print('Train: [{0}][{1}/{2}]\t'
+                  'BT {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                  'DT {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                  'loss {loss.val:.3f} ({loss.avg:.3f})'.format(
+                   epoch, idx + 1, len(trainloader_S), batch_time=batch_time,
+                   data_time=data_time, loss=losses_CE))
+            sys.stdout.flush()
+    if opt.method == 'Joint_Con':
+        return {'CE':losses_CE.avg, 'Con': losses_Con.avg}, top1.avg
+    elif 'CE' in opt.method:
+        return losses_CE.avg, top1.avg
+    else:
+        raise ValueError("check method") 
 
 
 

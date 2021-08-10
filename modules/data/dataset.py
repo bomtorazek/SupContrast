@@ -54,11 +54,6 @@ class GeneralDataset(torch.utils.data.Dataset):
         img = (Image.open(img_fpath))
         if self.is_gray:
             img = img.convert('RGB')
-        # .convert('RGB')
-        # if len(img.shape) == 2: # gray
-        #     img = np.stack([img, img, img], axis=-1)
-        # image_dict['image'] = img
-        # image_dict['path'] = img_fpath
 
         if self._transform is not None:
             image = self._transform(img)

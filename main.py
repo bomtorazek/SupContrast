@@ -7,9 +7,9 @@ import tensorboard_logger as tb_logger
 
 from util import adjust_learning_rate
 from util import set_optimizer
-from modules.data import set_loader
+from modules.data import set_loader, adjust_batch_size
 from modules.networks import set_model, save_model
-from modules.runner import train, validate, test
+from modules.runner import train, train_sampling, validate, test
 from config import parse_option
 
 # from modules.pytorch_grad_cam import GradCAMPlusPlus, AblationCAM, EigenCAM
@@ -38,13 +38,23 @@ def main():
     # tensorboard
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
 
+    if opt.sampling == 'unbalanced':
+        trainer = train
+    elif 'warm' in opt.sampling or opt.sampling == 'balanced':
+        trainer = train_sampling
+
     # training routine
     for epoch in range(1, opt.epochs + 1):
         adjust_learning_rate(opt, optimizer, epoch)
+        if 'warm' in opt.sampling:
+            target_dataset = loaders['train']['target'].dataset
+            source_dataset = loaders['train']['source'].dataset
+            loaders['train'] = adjust_batch_size(opt, target_dataset, source_dataset, epoch)
+
 
         # train for one epoch
         time1 = time.time()
-        loss, train_acc = train(loaders['train'], model, criterion, optimizer, epoch, opt)
+        loss, train_acc = trainer(loaders['train'], model, criterion, optimizer, epoch, opt)
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
@@ -60,8 +70,8 @@ def main():
         logger.log_value('train_acc', train_acc, epoch)
         logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
 
+        
         # evaluation
-
         if not opt.whole_data_train:
             val_loss, val_auc, val_bacc, val_th, val_acc05, val_f1 = validate(loaders['val'], model, criterion, opt)
             logger.log_value('val_loss', val_loss, epoch)

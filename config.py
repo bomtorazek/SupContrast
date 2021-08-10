@@ -24,7 +24,7 @@ def parse_option():
 
     # optimization
     parser.add_argument('--optimizer', type=str, default='ADAM')
-    parser.add_argument('--learning_rate', type=float, default=0.001,
+    parser.add_argument('--learning_rate', type=float, default=0.0001,
                         help='learning rate') # 0.05 SGD
     parser.add_argument('--lr_decay_epochs', type=str, default='700,800,900',
                         help='where to decay lr, can be a list')
@@ -35,30 +35,33 @@ def parse_option():
     parser.add_argument('--momentum', type=float, default=0.9,
                         help='momentum')
 
-    # model dataset
     # network
     parser.add_argument('--model', type=str, default='resnet18')
     parser.add_argument('--num_cls', type=int, default=2)
     parser.add_argument('--model_transfer', type=str, default=None)
   
+    # dataset
     parser.add_argument('--dataset', type=str, default='cifar10',
                          help='dataset')
     parser.add_argument('--imgset_dir', type=str, default='fold.5-5/ratio/100%')
     parser.add_argument('--mean', type=str, help='mean of dataset in path in form of str tuple')
     parser.add_argument('--std', type=str, help='std of dataset in path in form of str tuple')
-    parser.add_argument('--data_folder', type=str, default=None, help='target')
-    parser.add_argument('--source_data_folder', type=str, default=None, help='source')
-    parser.add_argument('--val_fold', type=int, default=1, help='validation fold')
-    parser.add_argument('--test_fold', type=int, default=1, help='test fold')
-    parser.add_argument('--whole_data_train', action='store_true', default=False, help='whole data training, no validation set')
+    parser.add_argument('--target_folder', type=str, default=None, help='target')
+    parser.add_argument('--source_folder', type=str, default=None, help='source')
+    parser.add_argument('--val_fold', type=int, default=1, help='validation fold, 1 if whole_data_train')
+    parser.add_argument('--test_fold', type=int, default=1, help='test fold, generally 1')
+    parser.add_argument('--whole_data_train', action='store_true', default=False, help='whole data training, no validation set, make val+train to train')
     parser.add_argument('--train_util_rate', type=float, default=1.0, help='train util rate')
-    # parser.add_argument('--translate', type=int, default=16, help='translation augment')
-    # parser.add_argument('--rotate90', type=bool, default=True, help='rotation augment')
+    parser.add_argument('--ur_from_imageset', action='store_true', default=False,  help='get UR from imageset txt')
+    parser.add_argument('--ur_seed', type=int, default = 100, help='seed for ur_from_imageset')
     parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop or Resize')
+    parser.add_argument('--sampling', type=str, default='unbalanced', choices=['unbalanced','balanced','warmup1','warmup2'])
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
                         choices=['SupCon', 'SimCLR', 'Joint_Con', 'Joint_CE', 'CE'], help='choose method')
+    parser.add_argument('--aug', type=str, default='sim',
+                        help='augmentation type, rand_3_5, cutmix_0.5_PP_ox or AB or EI, stacked_rand_2_10 ')
 
     # temperature and hypers
     parser.add_argument('--temp', type=float, default=0.08,
@@ -70,14 +73,11 @@ def parse_option():
                         help='mlp or fc')
     parser.add_argument('--feat_dim', type=int, default=128,
                         help='dim of feature head')
-    parser.add_argument('--aug', type=str, default='sim',
-                        help='augmentation type, rand_3_5, cutmix_0.5_PP or AB or EI, stacked_rand_2_10 ')
     parser.add_argument('--dp', action='store_true', default=False,
-                        help='data parallel for whole model, dp for encoder by default ')
-    parser.add_argument('--remove_pos_denom', action='store_true', default=False,
-                        help='remove positives from denominator ')
-                   
-
+                        help='data parallel for whole model, dp for encoder by default. for cutmix, must activate dp ')
+    parser.add_argument('--loss_type', type=str, default='SupCon',
+                        choices=['SupCon', 'pos_denom', 'pos_numer'], 
+                        help='choose loss, pos_denom means removing postivies of the denominator, and pos_numer means adding positives on the numerator')
 
     # other setting
     parser.add_argument('--cosine', action='store_true',
@@ -99,8 +99,6 @@ def parse_option():
         raise ValueError("Not supported dataset name")
 
     # set the path according to the environment
-    if opt.data_folder is None:
-        opt.data_folder = './datasets/'
     opt.model_path = './save/SupCon/{}_models'.format(opt.dataset)
     opt.tb_path = './save/SupCon/{}_tensorboard'.format(opt.dataset)
 
@@ -109,23 +107,35 @@ def parse_option():
     for it in iterations:
         opt.lr_decay_epochs.append(int(it)) # [700,800,900] exponential lr decay default
 
-    opt.model_name = '{}_{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}_trial_{}'.\
+    opt.model_name = '{}_{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}'.\
         format(opt.method, opt.dataset, opt.model, opt.train_util_rate, opt.epochs,opt.learning_rate,
-               opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp, opt.trial)
+               opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp)
     # Joint, MLCC, ResNet18, 0.001, 1e-4, bs, temp, 
     
-    if opt.remove_pos_denom:
-        opt.model_name += '_remove_pos'
+    if opt.ur_from_imageset and not opt.whole_data_train:
+        raise ValueError("when using 'ur_from_imageset, need to activate 'whole_data_train")
+
+    if 'Con' in opt.method:
+        opt.model_name += '_' + opt.loss_type
+    
+    if opt.sampling != 'unbalanced':
+        if len(opt.gpu) > 1: #FIXME
+            raise NotImplementedError("""Sampling method is not supported for multi-gpu yet.\n   
+                When using unbalaned sampling, recommend that not using multi-gpus due to distribution problems of mini-batches.""")
+        elif 'Joint' not in opt.method:
+            raise ValueError("CE method can only has unbalanced sampling method")
+
+    opt.model_name += '_sampling_'+ opt.sampling 
     
     if opt.whole_data_train:
         opt.model_name += '_whole_data'
     else:
         opt.model_name += f'_fold_{opt.val_fold}'
     
-
     if opt.cosine:
         opt.model_name = '{}_cosine'.format(opt.model_name)
 
+ 
     # warm-up for large-batch training,
     if opt.batch_size > 256:
         opt.warm = True
@@ -139,6 +149,8 @@ def parse_option():
                     1 + math.cos(math.pi * opt.warm_epochs / opt.epochs)) / 2
         else:
             opt.warmup_to = opt.learning_rate
+    
+    opt.model_name += f'_trial_{opt.trial}'
 
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name) # tensorboard
     if not os.path.isdir(opt.tb_folder):
@@ -147,5 +159,7 @@ def parse_option():
     opt.save_folder = os.path.join(opt.model_path, opt.model_name)
     if not os.path.isdir(opt.save_folder):
         os.makedirs(opt.save_folder)
+
+    
 
     return opt
