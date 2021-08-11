@@ -46,17 +46,24 @@ def main():
     # training routine
     for epoch in range(1, opt.epochs + 1):
         adjust_learning_rate(opt, optimizer, epoch)
+
+
         if 'warm' in opt.sampling:
+            #FIXME duplicated dataloading when using warmup
             target_dataset = loaders['train']['target'].dataset
             source_dataset = loaders['train']['source'].dataset
+            if opt.class_balanced:
+                target_dataset.get_class_balanced()
+                source_dataset.get_class_balanced()
             loaders['train'] = adjust_batch_size(opt, target_dataset, source_dataset, epoch)
-
 
         # train for one epoch
         time1 = time.time()
         loss, train_acc = trainer(loaders['train'], model, criterion, optimizer, epoch, opt)
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
+
+
 
         # tensorboard logger
         if opt.method == 'Joint_Con':
@@ -70,7 +77,6 @@ def main():
         logger.log_value('train_acc', train_acc, epoch)
         logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
 
-        
         # evaluation
         if not opt.whole_data_train:
             val_loss, val_auc, val_bacc, val_th, val_acc05, val_f1 = validate(loaders['val'], model, criterion, opt)

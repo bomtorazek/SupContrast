@@ -1,12 +1,12 @@
 import os.path as osp
 from math import ceil
 
-from torchvision import transforms, datasets
+from torchvision import transforms
 import torch
 import numpy as np
 
 from modules.data.transform import TwoCropTransform, get_transform
-from modules.data.dataset import GeneralDataset
+from modules.data.dataset import GeneralDataset, ClassBalancedDataset
 
 
 
@@ -79,10 +79,12 @@ def set_loader(opt):
             train_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=train_names_T,
                                             ext_data_dir=opt.source_folder, ext_image_names=train_names_S,
                                             transform=train_transform)
-        elif 'warm' in opt.sampling or opt.sampling == 'balanced':
-            train_dataset_T = GeneralDataset(data_dir=opt.target_folder, image_names=train_names_T,
+        else:
+            Dataset = ClassBalancedDataset if opt.class_balanced else GeneralDataset
+
+            train_dataset_T = Dataset(data_dir=opt.target_folder, image_names=train_names_T,
                                 transform=train_transform)
-            train_dataset_S = GeneralDataset(data_dir=opt.source_folder, image_names=train_names_S,
+            train_dataset_S = Dataset(data_dir=opt.source_folder, image_names=train_names_S,
                     transform=train_transform)
 
     else:
@@ -106,11 +108,13 @@ def set_loader(opt):
             train_dataset, batch_size=opt.batch_size, shuffle= True,
             num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
     else:
+        shuffle = False if opt.class_balanced else True
+        assert opt.batch_size%2 == 0
         train_loader_T = torch.utils.data.DataLoader(
-            train_dataset_T, batch_size=opt.batch_size//2, shuffle= True,
+            train_dataset_T, batch_size=opt.batch_size//2, shuffle= shuffle,
             num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
         train_loader_S = torch.utils.data.DataLoader(
-            train_dataset_S, batch_size=opt.batch_size//2, shuffle= True,
+            train_dataset_S, batch_size=opt.batch_size//2, shuffle= shuffle,
             num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
         train_loader = {'target':train_loader_T, 'source':train_loader_S}
         
@@ -135,20 +139,17 @@ def adjust_batch_size(opt, train_dataset_T, train_dataset_S, epoch):
     num_S = len(train_dataset_S)
 
     first_BS_T = ceil(opt.batch_size * num_T/(num_T + num_S))
-    if opt.sampling == 'warmup1':
-        last_BS_T = opt.batch_size // 2
-    elif opt.sampling == 'warmup2':
-        last_BS_T = opt.batch_size 
-        
+    last_BS_T = opt.batch_size // 2
+
     BS_T = round((epoch/opt.epochs)*(last_BS_T - first_BS_T) + first_BS_T)
     BS_S = opt.batch_size - BS_T
 
-
+    shuffle = False if opt.class_balanced else True
     train_loader_T = torch.utils.data.DataLoader(
-            train_dataset_T, batch_size=BS_T, shuffle= True,
+            train_dataset_T, batch_size=BS_T, shuffle= shuffle,
             num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
     train_loader_S = torch.utils.data.DataLoader(
-        train_dataset_S, batch_size=BS_S, shuffle= True,
+        train_dataset_S, batch_size=BS_S, shuffle= shuffle,
         num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
     
     return {'target':train_loader_T, 'source':train_loader_S}

@@ -164,6 +164,10 @@ def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
             if idx ==0:
                 print(images_T[0].shape, 'target')
                 print(images_S[0].shape, 'source')
+            third = len(trainloader_S)//3
+            if idx % third == 0:
+                print(f'{idx}/{len(trainloader_S)}')
+                
             images0 = torch.cat([images_T[0], images_S[0]], dim=0)
             images1 = torch.cat([images_T[1], images_S[1]], dim=0)
 

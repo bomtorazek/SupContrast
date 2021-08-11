@@ -55,7 +55,8 @@ def parse_option():
     parser.add_argument('--ur_from_imageset', action='store_true', default=False,  help='get UR from imageset txt')
     parser.add_argument('--ur_seed', type=int, default = 100, help='seed for ur_from_imageset')
     parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop or Resize')
-    parser.add_argument('--sampling', type=str, default='unbalanced', choices=['unbalanced','balanced','warmup1','warmup2'])
+    parser.add_argument('--sampling', type=str, default='unbalanced', choices=['unbalanced','balanced','warmup'])
+    parser.add_argument('--class_balanced', action='store_true', default =False, help='use class-balanced dataset')
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
@@ -117,7 +118,7 @@ def parse_option():
 
     if 'Con' in opt.method:
         opt.model_name += '_' + opt.loss_type
-    
+        
     if opt.sampling != 'unbalanced':
         if len(opt.gpu) > 1: #FIXME
             raise NotImplementedError("""Sampling method is not supported for multi-gpu yet.\n   
@@ -126,6 +127,10 @@ def parse_option():
             raise ValueError("CE method can only has unbalanced sampling method")
 
     opt.model_name += '_sampling_'+ opt.sampling 
+    if opt.class_balanced: # FIXME
+        opt.model_name += '_class_balanced'
+        if opt.sampling != 'warmup':
+            raise NotImplementedError("class_balanced method is only supported for warmup sampling now.")
     
     if opt.whole_data_train:
         opt.model_name += '_whole_data'
