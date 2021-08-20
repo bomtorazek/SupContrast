@@ -9,7 +9,7 @@ from util import adjust_learning_rate
 from util import set_optimizer
 from modules.data import set_loader, adjust_batch_size
 from modules.networks import set_model, save_model
-from modules.runner import train, train_sampling, validate, test
+from modules.runner import train, train_sampling, train_sampling_dsbn, validate, test
 from config import parse_option
 
 # from modules.pytorch_grad_cam import GradCAMPlusPlus, AblationCAM, EigenCAM
@@ -41,7 +41,10 @@ def main():
     if opt.sampling == 'unbalanced':
         trainer = train
     elif 'warm' in opt.sampling or opt.sampling == 'balanced':
-        trainer = train_sampling
+        if opt.dsbn:
+            trainer = train_sampling_dsbn
+        else:
+            trainer = train_sampling
 
     # training routine
     for epoch in range(1, opt.epochs + 1):
