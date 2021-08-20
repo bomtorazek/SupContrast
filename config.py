@@ -14,7 +14,7 @@ def parse_option():
     parser.add_argument('--batch_size', type=int, default=256,
                         help='batch_size')
     parser.add_argument('--num_workers', type=int, default=16,
-                        help='num of workers to use')
+                        help='num of workers to use, 16?')
     parser.add_argument('--epochs', type=int, default=1000,
                         help='number of training epochs')
     parser.add_argument('--gpu', type=str, default='0,1,2,3',
@@ -89,9 +89,13 @@ def parse_option():
                         help='warm-up for large batch training')
     parser.add_argument('--trial', type=str, default='0',
                         help='id for recording multiple runs')
+    parser.add_argument('--temp_', action='store_true',
+                        help='id for recording multiple runs') #FIXME
+        
 
     opt = parser.parse_args()
 
+    ##------------Dataset------------
     if 'mlcc' in opt.dataset.lower():
         opt.imgset_dir = 'fold.5-5/ratio/100%'
     elif 'vis' in opt.dataset.lower():
@@ -99,48 +103,19 @@ def parse_option():
     else:
         raise ValueError("Not supported dataset name")
 
-    # set the path according to the environment
+    if opt.ur_from_imageset and not opt.whole_data_train:
+        raise ValueError("when using 'ur_from_imageset, need to activate 'whole_data_train")
+
+    ##------------Path------------
     opt.model_path = './save/SupCon/{}_models'.format(opt.dataset)
     opt.tb_path = './save/SupCon/{}_tensorboard'.format(opt.dataset)
 
+    ##------------Iteration & LR scheduling------------
     iterations = opt.lr_decay_epochs.split(',') # 700,800,900
     opt.lr_decay_epochs = list([])
     for it in iterations:
         opt.lr_decay_epochs.append(int(it)) # [700,800,900] exponential lr decay default
 
-    opt.model_name = '{}_{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}'.\
-        format(opt.method, opt.dataset, opt.model, opt.train_util_rate, opt.epochs,opt.learning_rate,
-               opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp)
-    # Joint, MLCC, ResNet18, 0.001, 1e-4, bs, temp, 
-    
-    if opt.ur_from_imageset and not opt.whole_data_train:
-        raise ValueError("when using 'ur_from_imageset, need to activate 'whole_data_train")
-
-    if 'Con' in opt.method:
-        opt.model_name += '_' + opt.loss_type
-        
-    if opt.sampling != 'unbalanced':
-        if len(opt.gpu) > 1: #FIXME
-            raise NotImplementedError("""Sampling method is not supported for multi-gpu yet.\n   
-                When using unbalaned sampling, recommend that not using multi-gpus due to distribution problems of mini-batches.""")
-        elif 'Joint' not in opt.method:
-            raise ValueError("CE method can only has unbalanced sampling method")
-
-    opt.model_name += '_sampling_'+ opt.sampling 
-    if opt.class_balanced: # FIXME
-        opt.model_name += '_class_balanced'
-        if opt.sampling != 'warmup':
-            raise NotImplementedError("class_balanced method is only supported for warmup sampling now.")
-    
-    if opt.whole_data_train:
-        opt.model_name += '_whole_data'
-    else:
-        opt.model_name += f'_fold_{opt.val_fold}'
-    
-    if opt.cosine:
-        opt.model_name = '{}_cosine'.format(opt.model_name)
-
- 
     # warm-up for large-batch training,
     if opt.batch_size > 256:
         opt.warm = True
@@ -154,17 +129,58 @@ def parse_option():
                     1 + math.cos(math.pi * opt.warm_epochs / opt.epochs)) / 2
         else:
             opt.warmup_to = opt.learning_rate
+
+    ##------------DSBN------------
+    opt.dsbn = False
+    if 'dsbn' in opt.model:
+        opt.dsbn = True 
+        if 'Joint' not in opt.method:
+            raise ValueError("dsbn is only for Joint methods")
+        if opt.sampling == 'unbalanced':
+            raise NotImplementedError("unbalanced sampling with DSBN is not currently supported.")
+        
+    ##------------Sampling------------
+    if opt.class_balanced: # FIXME
+        opt.model_name += '_class_balanced'
+        if opt.sampling != 'warmup':
+            raise NotImplementedError("class_balanced method is only supported for warmup sampling now.")
+
+
+    ##------------Model Name------------
+    opt.model_name = '{}_{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}'.\
+        format(opt.method, opt.dataset, opt.model, opt.train_util_rate, opt.epochs,opt.learning_rate,
+               opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp)
     
+    if 'Con' in opt.method:
+        opt.model_name += '_' + opt.loss_type
+    opt.model_name += '_sampling_'+ opt.sampling 
+
+    if opt.sampling != 'unbalanced':
+        if len(opt.gpu) > 1: #FIXME
+            raise NotImplementedError("""Sampling method is not supported for multi-gpu yet.\n   
+                When using unbalaned sampling, recommend that not using multi-gpus due to distribution problems of mini-batches.""")
+        elif 'Joint' not in opt.method:
+            raise ValueError("CE method can only has unbalanced sampling method")
+
+    if opt.whole_data_train:
+        opt.model_name += '_whole_data'
+    else:
+        opt.model_name += f'_fold_{opt.val_fold}'
+
+    if opt.cosine:
+        opt.model_name = '{}_cosine'.format(opt.model_name)
+
     opt.model_name += f'_trial_{opt.trial}'
 
-    opt.tb_folder = os.path.join(opt.tb_path, opt.model_name) # tensorboard
+
+    ##------------Tensorboard & Save Folder------------    
+    opt.tb_folder = os.path.join(opt.tb_path, opt.model_name) 
     if not os.path.isdir(opt.tb_folder):
         os.makedirs(opt.tb_folder)
 
     opt.save_folder = os.path.join(opt.model_path, opt.model_name)
     if not os.path.isdir(opt.save_folder):
         os.makedirs(opt.save_folder)
-
     
 
     return opt
