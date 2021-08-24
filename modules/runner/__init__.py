@@ -267,13 +267,6 @@ def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
         bsz = labels.shape[0]
 
         # target to zeros, source to ones
-        domain_idx_T = torch.zeros(labels_T.shape[0], dtype=torch.long).cuda(non_blocking=True)
-        if opt.temp_:
-            domain_idx_S = torch.ones(labels_S.shape[0], dtype=torch.long).cuda(non_blocking=True)
-        else:
-            domain_idx_S = torch.zeros(labels_S.shape[0], dtype=torch.long).cuda(non_blocking=True)
-        #FIXME
-
         if opt.method == 'Joint_CE':
             images_T = images_T.cuda(non_blocking=True)
             images_S = images_S.cuda(non_blocking=True)
@@ -282,8 +275,12 @@ def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
             warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
 
             # compute loss
-            output_T = model(images_T, domain_idx_T)
-            output_S = model(images_S, domain_idx_S)
+            if opt.temp_:
+                model.encoder.set_bn_domain(0)
+            output_T = model(images_T)
+            if opt.temp_:
+                model.encoder.set_bn_domain(1)    
+            output_S = model(images_S)
             output = torch.cat([output_T, output_S], dim=0)
             loss_CE = criterion(output, labels)
             
@@ -299,8 +296,12 @@ def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
             warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
 
             # compute loss
-            features_T, output_T = model(images_T, domain_idx_T)
-            features_S, output_S = model(images_S, domain_idx_S)
+            if opt.temp_:
+                model.encoder.set_bn_domain(0)
+            features_T, output_T = model(images_T)
+            if opt.temp_:
+                model.encoder.set_bn_domain(1) 
+            features_S, output_S = model(images_S)
 
             features_T0, features_T1 = features_T.chunk(2)
             features_S0, features_S1 = features_S.chunk(2)
@@ -382,12 +383,8 @@ def validate(val_loader, model, criterion, opt):
             bsz = labels.shape[0]
 
             # forward
-            if opt.dsbn:
-                domain_idx_T = torch.zeros(labels.shape[0], dtype=torch.long).cuda()
-                output = model(images, domain_idx_T)
-            else:
-                output = model(images)
-
+            output = model(images)
+            
             if opt.method == 'Joint_Con':
                 output = output[1] # feature, output in Joint_Con
             prob = torch.nn.functional.softmax(output, dim=1)[:,1]
@@ -472,12 +469,7 @@ def test(test_loader, model,  opt, metric=None, best_th = None):
             labels = labels.cuda()
 
             # forward
-            if opt.dsbn:
-                domain_idx_T = torch.zeros(labels.shape[0], dtype=torch.long).cuda()
-                output = model(images, domain_idx_T)
-            else:
-                output = model(images)
-
+            output = model(images)
             if opt.method == 'Joint_Con':
                 output = output[1] 
             prob = torch.nn.functional.softmax(output, dim=1)[:,1]

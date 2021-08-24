@@ -44,7 +44,7 @@ def main():
         if opt.dsbn:
             trainer = train_sampling_dsbn
         else:
-            trainer = train_sampling
+            trainer = train_sampling 
 
     # training routine
     for epoch in range(1, opt.epochs + 1):

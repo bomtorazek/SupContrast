@@ -89,9 +89,7 @@ def parse_option():
                         help='warm-up for large batch training')
     parser.add_argument('--trial', type=str, default='0',
                         help='id for recording multiple runs')
-    parser.add_argument('--temp_', action='store_true',
-                        help='id for recording multiple runs') #FIXME
-        
+
 
     opt = parser.parse_args()
 

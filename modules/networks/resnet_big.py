@@ -12,6 +12,8 @@ from torchvision import models
 from modules.networks.resnet_dsbn import resnet18dsbn, resnet34dsbn, resnet50dsbn, resnet101dsbn
 
 
+
+
 def resnet18(**kwargs):
     return models.resnet18(pretrained=True)
    
@@ -83,11 +85,8 @@ class SupHybResNet(nn.Module):
         self.fc = nn.Linear(dim_in, num_classes)
 
 
-    def forward(self, x, domain_idx = None):
-        if domain_idx is not None:
-            feat = self.encoder(x, domain_idx)
-        else:
-            feat = self.encoder(x)
+    def forward(self, x):
+        feat = self.encoder(x)
         fc = self.fc(feat) # feat.detach()
         feat = F.normalize(self.head(feat), dim=1)
         return feat, fc
@@ -103,11 +102,8 @@ class SupCEResNet(nn.Module):
         self.encoder.fc = Identity()
         self.fc = nn.Linear(dim_in, num_classes)
 
-    def forward(self, x,  domain_idx = None):
-        if domain_idx is not None:
-            return self.fc(self.encoder(x, domain_idx))
-        else:
-            return self.fc(self.encoder(x))
+    def forward(self, x):
+        return self.fc(self.encoder(x))
 
 
 class LinearClassifier(nn.Module):
