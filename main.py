@@ -72,7 +72,6 @@ def main():
         if opt.method == 'Joint_Con':
             logger.log_value('train_loss_CE', loss['CE'], epoch)
             logger.log_value('train_Con_TT', loss['Con'], epoch)
-
         elif 'CE' in opt.method:
             logger.log_value('train_loss', loss, epoch)
         else:
@@ -93,34 +92,29 @@ def main():
             if val_auc >= best_auc:
                 best_epoch = epoch
                 best_auc = val_auc
-                save_file = os.path.join(
-                    opt.save_folder, 'auc_best.pth')
+                save_file = os.path.join(opt.save_folder, 'auc_best.pth')
                 save_model(model, optimizer, opt, epoch, save_file)
             if val_bacc >= best_bacc:
                 best_epoch = epoch
                 best_bacc = val_bacc
                 best_th = val_th
-                save_file = os.path.join(
-                    opt.save_folder, 'bacc_best.pth')
+                save_file = os.path.join(opt.save_folder, 'bacc_best.pth')
                 save_model(model, optimizer, opt, epoch, save_file)
             if val_acc05 >= best_acc05:
                 best_epoch = epoch
                 best_acc05 = val_acc05
-                save_file = os.path.join(
-                    opt.save_folder, 'acc05_best.pth')
+                save_file = os.path.join(opt.save_folder, 'acc05_best.pth')
                 save_model(model, optimizer, opt, epoch, save_file)
             if val_f1 >= best_f1:
                 best_epoch = epoch
                 best_f1 = val_f1
-                save_file = os.path.join(
-                    opt.save_folder, 'f1_best.pth')
+                save_file = os.path.join(opt.save_folder, 'f1_best.pth')
                 save_model(model, optimizer, opt, epoch, save_file)
 
             if epoch >= best_epoch + opt.patience:
                 break
         elif epoch == opt.epochs: # last epoch
-            save_file = os.path.join(
-                opt.save_folder, 'last.pth')
+            save_file = os.path.join(opt.save_folder, 'last.pth')
             save_model(model, optimizer, opt, epoch, save_file)
 
     if not opt.whole_data_train:

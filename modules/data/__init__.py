@@ -9,25 +9,53 @@ from modules.data.transform import TwoCropTransform, get_transform
 from modules.data.dataset import GeneralDataset, ClassBalancedDataset
 
 
+def generate_imageset_by_seed(root, opt):
+    train_path = osp.join(root, 'train.{}-{}.txt'.format(opt.test_fold, opt.val_fold))
+    val_path = osp.join(root, 'validation.{}-{}.txt'.format(opt.test_fold, opt.val_fold))
 
+    with open(train_path, 'r') as fid:
+        temp = fid.read()
+    train_names = temp.strip().split('\n')
+
+    with open(val_path, 'r') as fid:
+        temp = fid.read()
+    val_names = temp.strp().split('\n')
+    whole_names = train_names + val_names
+
+    SEED = opt.ur_seed
+    num_used = int(len(whole_names) * opt.train_util_rate)
+    np.random.seed(SEED)
+    train_names = np.random.choice(whole_names, size=num_used, replace=False)
+
+    write_path = train_path[:-4] + f'-ur{opt.train_util_rate}-{SEED}.txt'
+    with open(write_path, 'w') as f:
+        for img in train_names:
+            f.write(img + '\n')
 
 
 def load_image_names(data_dir, util_rate, opt):
     imageset_dir = osp.join(data_dir, 'imageset/single_image.2class',opt.imgset_dir)
 
     if opt.ur_from_imageset and data_dir == opt.target_folder:
+        # merge train + validation and choose ur% data for training set
         img_set_name = 'train.{}-{}-ur{}-{}.txt'.format(opt.test_fold, opt.val_fold, opt.train_util_rate,opt.ur_seed)
-        with open(osp.join(imageset_dir,img_set_name ), 'r') as fid:
+
+        img_set_pth = osp.join(imageset_dir, img_set_name)
+        if not osp.exists(img_set_pth):
+            generate_imageset_by_seed(imageset_dir, opt)
+
+        with open(img_set_pth, 'r') as fid:
             temp = fid.read() # FIXME why fix?
         train_names = temp.split('\n')[:-1]
         val_names = None
-        print(f"Get UR from {img_set_name}")
         # no validation phase
+        print(f"Get UR from {img_set_name}")
     else:
+        # sample training set from train.x-x.txt only
         with open(osp.join(imageset_dir, 'train.{}-{}.txt'.format(opt.test_fold, opt.val_fold)), 'r') as fid:
             temp = fid.read()
         train_names = temp.split('\n')[:-1]
-    
+
         with open(osp.join(imageset_dir, 'validation.{}-{}.txt'.format(opt.test_fold, opt.val_fold)), 'r') as fid:
             temp = fid.read()
         val_names = temp.split('\n')[:-1]
@@ -39,15 +67,13 @@ def load_image_names(data_dir, util_rate, opt):
         if util_rate < 1:
             num_used = int(len(train_names) * util_rate)
             np.random.seed(1)
-            train_names = np.random.choice(train_names, size=num_used, replace=False)  
+            train_names = np.random.choice(train_names, size=num_used, replace=False)
 
     with open(osp.join(imageset_dir, 'test.{}.txt'.format(opt.test_fold)), 'r') as fid:
         temp = fid.read()
     test_names = temp.split('\n')[:-1]
 
     return train_names, val_names, test_names
-
-
 
 
 def set_loader(opt):
@@ -65,16 +91,18 @@ def set_loader(opt):
         normalize,
     ])
     if opt.method == 'Joint_Con':
-        train_transform =TwoCropTransform(train_transform)
+        train_transform = TwoCropTransform(train_transform)
 
-    
+
     ##----------Dataset----------##
     train_names_T, val_names_T, test_names_T = load_image_names(opt.target_folder, opt.train_util_rate,opt)
     print(f"# of target trainset:{len(train_names_T)}")
     if 'Joint' in opt.method:
-        train_names_S, _, _ = load_image_names(opt.source_folder, 1.0, opt)
+        #train_names_S, _, _ = load_image_names(opt.source_folder, 1.0, opt)
+        tr, _, ts = load_image_names(opt.source_folder, 1.0, opt) # val = None
+        train_names_S = tr + ts
         print(f"# of source trainset:{len(train_names_S)}")
-        
+
         if opt.sampling == 'unbalanced':
             train_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=train_names_T,
                                             ext_data_dir=opt.source_folder, ext_image_names=train_names_S,
@@ -85,7 +113,7 @@ def set_loader(opt):
             train_dataset_T = Dataset(data_dir=opt.target_folder, image_names=train_names_T,
                                 transform=train_transform)
             train_dataset_S = Dataset(data_dir=opt.source_folder, image_names=train_names_S,
-                    transform=train_transform)
+                                transform=train_transform)
 
     else:
         train_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=train_names_T,
@@ -93,14 +121,13 @@ def set_loader(opt):
 
     if not opt.whole_data_train:
         val_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=val_names_T,
-                                            transform=val_transform,) 
+                                            transform=val_transform,)
         print(f"# of target valset:{len(val_names_T)}")
-
 
     test_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=test_names_T,
                                     transform=test_transform)
     print(f"# of target testset:{len(test_names_T)}")
-        
+
     ##----------Dataloader----------##
     # It seems that incosistent batch size harms contrastive learning, so drop the last batch
     if opt.sampling == 'unbalanced':
@@ -117,7 +144,7 @@ def set_loader(opt):
             train_dataset_S, batch_size=opt.batch_size//2, shuffle= shuffle,
             num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
         train_loader = {'target':train_loader_T, 'source':train_loader_S}
-        
+
     if opt.whole_data_train:
         val_loader = None
     else:
@@ -147,9 +174,11 @@ def adjust_batch_size(opt, train_dataset_T, train_dataset_S, epoch):
     shuffle = False if opt.class_balanced else True
     train_loader_T = torch.utils.data.DataLoader(
             train_dataset_T, batch_size=BS_T, shuffle= shuffle,
-            num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
+            num_workers=opt.num_workers, pin_memory=False, sampler=None, drop_last = True)
+            #num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
     train_loader_S = torch.utils.data.DataLoader(
-        train_dataset_S, batch_size=BS_S, shuffle= shuffle,
-        num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
-    
+            train_dataset_S, batch_size=BS_S, shuffle= shuffle,
+            num_workers=opt.num_workers, pin_memory=False, sampler=None, drop_last = True)
+            #num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
+
     return {'target':train_loader_T, 'source':train_loader_S}

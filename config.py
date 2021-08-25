@@ -39,7 +39,7 @@ def parse_option():
     parser.add_argument('--model', type=str, default='resnet18')
     parser.add_argument('--num_cls', type=int, default=2)
     parser.add_argument('--model_transfer', type=str, default=None)
-  
+
     # dataset
     parser.add_argument('--dataset', type=str, default='cifar10',
                          help='dataset')
@@ -77,7 +77,7 @@ def parse_option():
     parser.add_argument('--dp', action='store_true', default=False,
                         help='data parallel for whole model, dp for encoder by default. for cutmix, must activate dp ')
     parser.add_argument('--loss_type', type=str, default='SupCon',
-                        choices=['SupCon', 'pos_denom', 'pos_numer'], 
+                        choices=['SupCon', 'pos_denom', 'pos_numer'],
                         help='choose loss, pos_denom means removing postivies of the denominator, and pos_numer means adding positives on the numerator')
 
     # other setting
@@ -131,12 +131,12 @@ def parse_option():
     ##------------DSBN------------
     opt.dsbn = False
     if 'dsbn' in opt.model:
-        opt.dsbn = True 
+        opt.dsbn = True
         if 'Joint' not in opt.method:
             raise ValueError("dsbn is only for Joint methods")
         if opt.sampling == 'unbalanced':
             raise NotImplementedError("unbalanced sampling with DSBN is not currently supported.")
-        
+
     ##------------Sampling------------
     if opt.class_balanced: # FIXME
         opt.model_name += '_class_balanced'
@@ -148,14 +148,14 @@ def parse_option():
     opt.model_name = '{}_{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}'.\
         format(opt.method, opt.dataset, opt.model, opt.train_util_rate, opt.epochs,opt.learning_rate,
                opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp)
-    
+
     if 'Con' in opt.method:
         opt.model_name += '_' + opt.loss_type
-    opt.model_name += '_sampling_'+ opt.sampling 
+    opt.model_name += '_sampling_'+ opt.sampling
 
     if opt.sampling != 'unbalanced':
         if len(opt.gpu) > 1: #FIXME
-            raise NotImplementedError("""Sampling method is not supported for multi-gpu yet.\n   
+            raise NotImplementedError("""Sampling method is not supported for multi-gpu yet.\n
                 When using unbalaned sampling, recommend that not using multi-gpus due to distribution problems of mini-batches.""")
         elif 'Joint' not in opt.method:
             raise ValueError("CE method can only has unbalanced sampling method")
@@ -171,14 +171,14 @@ def parse_option():
     opt.model_name += f'_trial_{opt.trial}'
 
 
-    ##------------Tensorboard & Save Folder------------    
-    opt.tb_folder = os.path.join(opt.tb_path, opt.model_name) 
+    ##------------Tensorboard & Save Folder------------
+    opt.tb_folder = os.path.join(opt.tb_path, opt.model_name)
     if not os.path.isdir(opt.tb_folder):
         os.makedirs(opt.tb_folder)
 
     opt.save_folder = os.path.join(opt.model_path, opt.model_name)
     if not os.path.isdir(opt.save_folder):
         os.makedirs(opt.save_folder)
-    
+
 
     return opt

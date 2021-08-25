@@ -15,7 +15,7 @@ class GeneralDataset(torch.utils.data.Dataset):
         self._image_names = image_names
         self._ext_data_dir = ext_data_dir
         self._ext_image_names = ext_image_names
-        
+
 
         anno_fname = 'single_image.2class.json'
         self._anno_json = json.load(open(osp.join(data_dir, 'annotation', anno_fname), 'r'))
@@ -36,16 +36,16 @@ class GeneralDataset(torch.utils.data.Dataset):
 
                 self._image_fpaths.append(image_fpath)
                 self._labels.append(label)
-        
+
 
         # For grayscale images
         np_img = np.array(Image.open(self._image_fpaths[0]))
         if np_img.ndim == 2:
-            self.is_gray = True 
+            self.is_gray = True
         elif np_img.ndim == 3:
             self.is_gray = False
         else:
-            raise ValueError("This image might be RGBA, which is not supported yet.") 
+            raise ValueError("This image might be RGBA, which is not supported yet.")
 
     def __len__(self):
         return len(self._image_fpaths)
@@ -59,7 +59,7 @@ class GeneralDataset(torch.utils.data.Dataset):
 
         if self._transform is not None:
             image = self._transform(img)
- 
+
         return image, self._labels[index]
 
 
@@ -68,7 +68,7 @@ class ClassBalancedDataset(torch.utils.data.Dataset):
         self._data_dir = data_dir
         self._transform = transform
         self._image_names = image_names
-        
+
         anno_fname = 'single_image.2class.json'
         self._anno_json = json.load(open(osp.join(data_dir, 'annotation', anno_fname), 'r'))
 
@@ -83,15 +83,15 @@ class ClassBalancedDataset(torch.utils.data.Dataset):
         self.most_common_cls = max(self._image_fpaths_dict, key= lambda x: len(self._image_fpaths_dict[x]))
         self.longest_length = len(self._image_fpaths_dict[self.most_common_cls])
         self.get_class_balanced()
-  
+
         # For grayscale images
         np_img = np.array(Image.open(self._image_fpaths_dict[0][0]))
         if np_img.ndim == 2:
-            self.is_gray = True 
+            self.is_gray = True
         elif np_img.ndim == 3:
             self.is_gray = False
         else:
-            raise ValueError("This image might be RGBA, which is not supported yet.") 
+            raise ValueError("This image might be RGBA, which is not supported yet.")
 
     def __len__(self):
         return len(self._image_fpaths)
@@ -105,14 +105,14 @@ class ClassBalancedDataset(torch.utils.data.Dataset):
         if self._transform is not None:
             image = self._transform(img)
         return image, self._labels[index]
-    
+
     def get_class_balanced(self):
-        
+
         # generate labels and fpaths
         num_cls = len(self._image_fpaths_dict.keys())
         self._image_fpaths = [None] * (self.longest_length * num_cls)
         self._labels = [None] * (self.longest_length * num_cls)
-        
+
         classes = list(self._image_fpaths_dict.keys())
         random.shuffle(classes)
 
@@ -125,18 +125,18 @@ class ClassBalancedDataset(torch.utils.data.Dataset):
 
                 num_to_choose = self.longest_length % len(self._image_fpaths_dict[CLS])
                 augmented_paths += random.sample(self._image_fpaths_dict[CLS], num_to_choose)
-            
+
             else:
                 augmented_paths = self._image_fpaths_dict[CLS]
-                
+
             for jdx, aug_path in enumerate(augmented_paths):
                 self._image_fpaths[jdx*num_cls + idx] = aug_path
                 self._labels[jdx*num_cls + idx] = CLS
 
-            
-           
-                
- 
+
+
+
+
 
 
 

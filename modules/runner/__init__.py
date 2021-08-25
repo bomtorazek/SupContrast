@@ -34,7 +34,7 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
     end = time.time()
 
 
-    for idx, (images, labels) in enumerate(trainloader):   
+    for idx, (images, labels) in enumerate(trainloader):
         data_time.update(time.time() - end)
         bsz = labels.shape[0]
         if 'CE' in opt.method:
@@ -47,9 +47,9 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
             # compute loss
             output = model(images)
             loss_CE = criterion(output, labels)
-            
+
         elif opt.method == 'Joint_Con':
-            
+
             images[0] = images[0].cuda(non_blocking=True)
             images[1] = images[1].cuda(non_blocking=True)
 
@@ -62,7 +62,7 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
             images = torch.cat([images[0], images[1]], dim=0)
             labels = labels.cuda(non_blocking=True)
             labels_aug = torch.cat([labels, labels], dim=0)
-            
+
             warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
 
 
@@ -73,26 +73,26 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
             elif opt.head == 'fc':
                 f1_T, f2_T = torch.split(normalize(output,dim=1), [bsz, bsz], dim=0)
             features_T = torch.cat([f1_T.unsqueeze(1), f2_T.unsqueeze(1)], dim=1)
-            
+
             loss_Con = criterion['Con'](features_T, labels)
             loss_CE = criterion['CE'](output, labels_aug)
         else:
-            raise ValueError("check method")  
+            raise ValueError("check method")
 
         # update metric
         losses_CE.update(loss_CE.item(), bsz)
         if opt.method == 'Joint_Con':
             losses_Con.update(loss_Con.item(), bsz)
         elif 'CE' not in opt.method:
-            raise ValueError("check method")  
-        acc1, _ = accuracy(output[:bsz,:], labels[:bsz], topk=(1, 2))
+            raise ValueError("check method")
+        acc1 = accuracy(output[:bsz,:], labels[:bsz])
         top1.update(acc1[0], bsz)
 
         # SGD
         optimizer.zero_grad()
         total_loss = loss_CE
         if opt.method == 'Joint_Con':
-            total_loss = total_loss*opt.l_ce + loss_Con 
+            total_loss = total_loss*opt.l_ce + loss_Con
         total_loss.backward()
         optimizer.step()
 
@@ -115,7 +115,7 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
     elif 'CE' in opt.method:
         return losses_CE.avg, top1.avg
     else:
-        raise ValueError("check method")  
+        raise ValueError("check method")
 
 def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
     """one epoch training"""
@@ -137,7 +137,7 @@ def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
     iter_S = iter(trainloader_S)
 
     for idx in range(len(trainloader_S)): # FIXME assume that # of source dataset is larger than # of target dataset
-        try: 
+        try:
             images_T, labels_T = iter_T.next()
         except:
             iter_T = iter(trainloader_T)
@@ -163,18 +163,18 @@ def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
             # compute loss
             output = model(images)
             loss_CE = criterion(output, labels)
-            
+
         elif opt.method == 'Joint_Con':
             if idx ==0:
                 print(images_T[0].shape, 'target')
                 print(images_S[0].shape, 'source')
-                
+
             images0 = torch.cat([images_T[0], images_S[0]], dim=0)
             images1 = torch.cat([images_T[1], images_S[1]], dim=0)
 
             images = torch.cat([images0, images1], dim=0).cuda(non_blocking=True)
             labels_aug = torch.cat([labels, labels], dim=0)
-            
+
             warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
 
             # compute loss
@@ -185,26 +185,26 @@ def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
             elif opt.head == 'fc':
                 f0, f1 = torch.split(normalize(output,dim=1), [bsz, bsz], dim=0)
             features = torch.cat([f0.unsqueeze(1), f1.unsqueeze(1)], dim=1)
-            
+
             loss_Con = criterion['Con'](features, labels)
             loss_CE = criterion['CE'](output, labels_aug)
         else:
-            raise ValueError("check method")  
+            raise ValueError("check method")
 
         # update metric
         losses_CE.update(loss_CE.item(), bsz)
         if opt.method == 'Joint_Con':
             losses_Con.update(loss_Con.item(), bsz)
         elif 'CE' not in opt.method:
-            raise ValueError("check method")  
-        acc1, _ = accuracy(output[:bsz,:], labels[:bsz], topk=(1, 2))
+            raise ValueError("check method")
+        acc1 = accuracy(output[:bsz,:], labels[:bsz])
         top1.update(acc1[0], bsz)
 
         # SGD
         optimizer.zero_grad()
         total_loss = loss_CE
         if opt.method == 'Joint_Con':
-            total_loss = total_loss*opt.l_ce + loss_Con 
+            total_loss = total_loss*opt.l_ce + loss_Con
         total_loss.backward()
         optimizer.step()
 
@@ -227,7 +227,7 @@ def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
     elif 'CE' in opt.method:
         return losses_CE.avg, top1.avg
     else:
-        raise ValueError("check method") 
+        raise ValueError("check method")
 
 
 def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
@@ -250,7 +250,7 @@ def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
     iter_S = iter(trainloader_S)
 
     for idx in range(len(trainloader_S)): # FIXME assume that # of source dataset is larger than # of target dataset
-        try: 
+        try:
             images_T, labels_T = iter_T.next()
         except:
             iter_T = iter(trainloader_T)
@@ -269,8 +269,8 @@ def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
         # target to zeros, source to ones
         domain_idx_T = torch.zeros(labels_T.shape[0], dtype=torch.long).cuda(non_blocking=True)
         domain_idx_S = torch.ones(labels_S.shape[0], dtype=torch.long).cuda(non_blocking=True)
-   
-        
+
+
         if opt.method == 'Joint_CE':
             images_T = images_T.cuda(non_blocking=True)
             images_S = images_S.cuda(non_blocking=True)
@@ -283,16 +283,16 @@ def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
             output_S = model(images_S, domain_idx_S)
             output = torch.cat([output_T, output_S], dim=0)
             loss_CE = criterion(output, labels)
-            
+
         elif opt.method == 'Joint_Con':
             if idx ==0:
                 print(images_T[0].shape, 'target')
                 print(images_S[0].shape, 'source')
-                
+
             images_T = torch.cat([images_T[0], images_T[1]], dim=0).cuda(non_blocking=True)
             images_S = torch.cat([images_S[0], images_S[1]], dim=0).cuda(non_blocking=True)
             labels_aug = torch.cat([labels, labels], dim=0)
-            
+
             warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
 
             # compute loss
@@ -312,26 +312,26 @@ def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
             elif opt.head == 'fc':
                 f0, f1 = torch.split(normalize(output,dim=1), [bsz, bsz], dim=0)
             features = torch.cat([f0.unsqueeze(1), f1.unsqueeze(1)], dim=1)
-            
+
             loss_Con = criterion['Con'](features, labels)
             loss_CE = criterion['CE'](output, labels_aug)
         else:
-            raise ValueError("check method")  
+            raise ValueError("check method")
 
         # update metric
         losses_CE.update(loss_CE.item(), bsz)
         if opt.method == 'Joint_Con':
             losses_Con.update(loss_Con.item(), bsz)
         elif 'CE' not in opt.method:
-            raise ValueError("check method")  
-        acc1, _ = accuracy(output[:bsz,:], labels[:bsz], topk=(1, 2))
+            raise ValueError("check method")
+        acc1 = accuracy(output[:bsz,:], labels[:bsz])
         top1.update(acc1[0], bsz)
 
         # SGD
         optimizer.zero_grad()
         total_loss = loss_CE
         if opt.method == 'Joint_Con':
-            total_loss = total_loss*opt.l_ce + loss_Con 
+            total_loss = total_loss*opt.l_ce + loss_Con
         total_loss.backward()
         optimizer.step()
 
@@ -354,9 +354,7 @@ def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
     elif 'CE' in opt.method:
         return losses_CE.avg, top1.avg
     else:
-        raise ValueError("check method") 
-
-
+        raise ValueError("check method")
 
 
 def validate(val_loader, model, criterion, opt):
@@ -389,18 +387,18 @@ def validate(val_loader, model, criterion, opt):
                 output = output[1] # feature, output in Joint_Con
             prob = torch.nn.functional.softmax(output, dim=1)[:,1]
             probs.extend(prob.tolist())
-            
+
             if opt.method == 'Joint_Con':
                 loss = criterion['CE'](output, labels)
             elif 'CE' in opt.method:
                 loss = criterion(output, labels)
             else:
-                raise ValueError("check method")  
-                
+                raise ValueError("check method")
+
             # update metric
             losses.update(loss.item(), bsz)
 
-            acc1, acc2 = accuracy(output, labels, topk=(1, 2))
+            acc1 = accuracy(output, labels)
             top1.update(acc1[0], bsz)
 
             # measure elapsed time
@@ -421,12 +419,12 @@ def validate(val_loader, model, criterion, opt):
     f1 = f1_score(gts, probs>=0.5)
     best_acc, best_th = best_accuracy(gts,probs)
     acc05 = accuracy_score(gts, probs>=0.5)
-    
+
     print('Val auc: {:.3f}'.format(auc), end = ' ')
     print('Val bacc: {:.3f}'.format(best_acc), end = ' ')
     print('Val f1: {:.3f}'.format(f1) )
     print('Val acc: {:.3f}'.format(acc05) )
-    
+
     return losses.avg, auc, best_acc, best_th, acc05, f1
 
 
@@ -476,10 +474,10 @@ def test(test_loader, model,  opt, metric=None, best_th = None):
                 output = model(images)
 
             if opt.method == 'Joint_Con':
-                output = output[1] 
+                output = output[1]
             prob = torch.nn.functional.softmax(output, dim=1)[:,1]
             probs.extend(prob.tolist())
-            
+
 
     gts = np.array(gts)
     probs = np.array(probs)
@@ -498,7 +496,7 @@ def test(test_loader, model,  opt, metric=None, best_th = None):
             acc = accuracy_score(gts, probs>=0.5)
             f1 = f1_score(gts, probs>=0.5)
             return auc, acc, f1
-            
+
         else:
             raise ValueError("unsupported metric")
     else:
