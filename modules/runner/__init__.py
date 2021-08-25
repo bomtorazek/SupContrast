@@ -275,11 +275,9 @@ def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
             warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
 
             # compute loss
-            if opt.temp_:
-                model.encoder.set_bn_domain(0)
+            model.encoder.set_bn_domain(0)
             output_T = model(images_T)
-            if opt.temp_:
-                model.encoder.set_bn_domain(1)    
+            model.encoder.set_bn_domain(1)    
             output_S = model(images_S)
             output = torch.cat([output_T, output_S], dim=0)
             loss_CE = criterion(output, labels)
@@ -296,11 +294,9 @@ def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
             warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
 
             # compute loss
-            if opt.temp_:
-                model.encoder.set_bn_domain(0)
+            model.encoder.set_bn_domain(0)
             features_T, output_T = model(images_T)
-            if opt.temp_:
-                model.encoder.set_bn_domain(1) 
+            model.encoder.set_bn_domain(1) 
             features_S, output_S = model(images_S)
 
             features_T0, features_T1 = features_T.chunk(2)
