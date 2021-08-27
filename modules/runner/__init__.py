@@ -268,12 +268,9 @@ def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
 
         # target to zeros, source to ones
         domain_idx_T = torch.zeros(labels_T.shape[0], dtype=torch.long).cuda(non_blocking=True)
-        if opt.temp_:
-            domain_idx_S = torch.ones(labels_S.shape[0], dtype=torch.long).cuda(non_blocking=True)
-        else:
-            domain_idx_S = torch.zeros(labels_S.shape[0], dtype=torch.long).cuda(non_blocking=True)
-        #FIXME
-
+        domain_idx_S = torch.ones(labels_S.shape[0], dtype=torch.long).cuda(non_blocking=True)
+   
+        
         if opt.method == 'Joint_CE':
             images_T = images_T.cuda(non_blocking=True)
             images_S = images_S.cuda(non_blocking=True)
