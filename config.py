@@ -145,6 +145,8 @@ def parse_option():
 
 
     ##------------Model Name------------
+    if opt.train_util_rate >= 1.0:
+        opt.train_util_rate = int(opt.train_util_rate)
     opt.model_name = '{}_{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}'.\
         format(opt.method, opt.dataset, opt.model, opt.train_util_rate, opt.epochs,opt.learning_rate,
                opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp)
