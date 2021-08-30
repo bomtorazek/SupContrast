@@ -19,18 +19,28 @@ def generate_imageset_by_seed(root, opt):
 
     with open(val_path, 'r') as fid:
         temp = fid.read()
-    val_names = temp.strp().split('\n')
+    val_names = temp.strip().split('\n')
     whole_names = train_names + val_names
 
     SEED = opt.ur_seed
-    num_used = int(len(whole_names) * opt.train_util_rate)
-    np.random.seed(SEED)
-    train_names = np.random.choice(whole_names, size=num_used, replace=False)
 
-    write_path = train_path[:-4] + f'-ur{opt.train_util_rate}-{SEED}.txt'
-    with open(write_path, 'w') as f:
-        for img in train_names:
-            f.write(img + '\n')
+    ls_samples = [10, 50, 100]
+    ls_urs = [0.1, 0.3, 0.5]
+
+    ls_ur_samples = [int(ur*len(whole_names)) for ur in ls_urs]
+    ls_total_samples = sorted(ls_samples + ls_ur_samples)
+
+    train_names = whole_names
+    for smp in ls_total_samples[::-1]: # descending order
+        np.random.seed(SEED)
+        train_names = np.random.choice(train_names, size=smp, replace=False)
+        # find ur if ur else smp
+        if not smp in ls_samples:
+            smp = [ur for ur in ls_urs if int(ur*len(whole_names))==smp][0]
+        write_path = train_path[:-4] + f'-ur{smp}-{SEED}.txt'
+        with open(write_path, 'w') as f:
+            for img in train_names:
+                f.write(img + '\n')
 
 
 def load_image_names(data_dir, util_rate, opt):
