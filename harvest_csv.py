@@ -4,14 +4,11 @@ import re
 #######
 # FIXME
 target_regex = '.*D_Sub_.*'
-#target_regex = '.*lens.*me15.*rsz512'
-#target_regex = '.*resnet.*me25' # regular expression for filtering
 #######
 
 regex = re.compile(target_regex)
 
 csv = pd.read_csv('./result.csv', sep=',', index_col=0, names=range(7))
-import ipdb; ipdb.set_trace()  # XXX DEBUG
 
 ls_name = csv.index.to_list()
 ls_key = list(set([name.split('trial_')[0] for name in ls_name]))
