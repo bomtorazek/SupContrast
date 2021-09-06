@@ -19,7 +19,7 @@ def denormalize(input): # (3,128,128)
     for i in range(3):
         input[i,:,:] *= std[i]
         input[i,:,:] += mean[i]
-    
+
     return input
 
 
@@ -95,7 +95,7 @@ def rand_bbox(size, lam, bbs = None):
         it = 0
         while True:
             it+=1
-            if it >= 100: 
+            if it >= 100:
                 print(it)
                 return 0,0,0,0
             cx = np.random.randint(W)
@@ -112,9 +112,9 @@ def rand_bbox(size, lam, bbs = None):
                     min_dist = dist
                     min_i = i
                     min_j = j
-        
 
-        cut_rat = np.sqrt(1. - lam) 
+
+        cut_rat = np.sqrt(1. - lam)
         cut_w = np.int(W * cut_rat) //2
         max_cut = max(abs(min_i - cx), abs(min_j - cy))
         cut = min(cut_w, max_cut)
@@ -123,7 +123,7 @@ def rand_bbox(size, lam, bbs = None):
         bby1 = np.clip(cy - cut, 0, H)
         bbx2 = np.clip(cx + cut, 0, W)
         bby2 = np.clip(cy + cut, 0, H)
-                    
+
         mask = np.zeros((W,H))
         mask[bx1:bx2, by1:by2] +=1
         mask[bbx1:bbx2, bby1:bby2] +=1
@@ -147,7 +147,7 @@ def rand_bbox(size, lam, bbs = None):
         bby2 = np.clip(cy + cut_h // 2, 0, H)
 
 
-            
+
     return bbx1, bby1, bbx2, bby2
 
 
@@ -169,7 +169,7 @@ def make_cutmix(images, labels, model, cam, m,bsz,epoch):
     cutmix_labels = torch.zeros_like(labels)
 
     bbx1, bby1, bbx2, bby2 = rand_bbox(images.size(), lam)
-    ng_iidx = [iid for iid in range(len(labels)) if labels[iid] == 1 ] # ng인 애들 
+    ng_iidx = [iid for iid in range(len(labels)) if labels[iid] == 1 ] # ng인 애들
 
     origin_images = torch.clone(images)
 
@@ -179,7 +179,7 @@ def make_cutmix(images, labels, model, cam, m,bsz,epoch):
         image2 = origin_images[iidx_b]
         if labels_a[iidx] == 0:
             if labels_b[iidx] == 0: # ok <- ok: ok, random box of cutmix
-                images[iidx, :, bbx1:bbx2, bby1:bby2] = origin_images[iidx_b, :, bbx1:bbx2, bby1:bby2] 
+                images[iidx, :, bbx1:bbx2, bby1:bby2] = origin_images[iidx_b, :, bbx1:bbx2, bby1:bby2]
                 # visualize_imgs(image1, image2, images[iidx],epoch, comb='ok-ok')
 
             elif labels_b[iidx] == 1: # ok <- ng: to ng, cut defect-region
@@ -192,24 +192,24 @@ def make_cutmix(images, labels, model, cam, m,bsz,epoch):
                     # visualize_imgs(image1, image2, images[iidx],epoch, comb='ok-ng', cam=cam_mask[ng_id,:,:])
             else:
                 raise ValueError("fucked label")
-        elif labels_a[iidx] == 1: 
+        elif labels_a[iidx] == 1:
             if labels_b[iidx] == 0:  # ng <- ok: ng, cut non-defect-region
                 ng_id = ng_iidx.index(iidx)
                 if soft_output[ng_id, 1] >= 0.9:
                     bbs = bbox2(cam_mask[ng_id,:,:]) # bounding box 추출
                     bbx1, bby1, bbx2, bby2 = rand_bbox(images.size(), lam, bbs) # 겹치면 빼기
                     images[iidx, :, bbx1:bbx2, bby1:bby2] = origin_images[iidx_b, :, bbx1:bbx2, bby1:bby2]
-         
+
                     # visualize_imgs(image1, image2, images[iidx], epoch, comb='ng-ok', cam=cam_mask[ng_id,:,:])
-                
-                cutmix_labels[iidx] = 1 
+
+                cutmix_labels[iidx] = 1
 
             elif labels_b[iidx] == 1: # ng <- ng: ng, cut defect-region (box)
                 ng_id = ng_iidx.index(iidx_b) # real_iidx가 ng_idx에서 몇 번째인지
                 if soft_output[ng_id, 1] >= 0.9:
                     bbx1, bbx2, bby1, bby2 = bbox2(cam_mask[ng_id,:,:]) # bounding box 추출
                     images[iidx, :, bbx1:bbx2, bby1:bby2] = origin_images[iidx_b, :, bbx1:bbx2, bby1:bby2]
-     
+
                     # visualize_imgs(image1, image2, images[iidx],epoch, comb='ng-ng', cam=cam_mask[ng_id,:,:])
                 cutmix_labels[iidx] = 1
 
@@ -235,7 +235,7 @@ def make_cutmix_ext(images, labels, model, cam, m,bsz,epoch, ext_images, type_):
     ext_cam_mask = ext_grayscale_cam >= 0.7 #  (n_ng,h,w)
     _, ext_ng_outputs = model(ext_ng_imgs) # FIXME double forwards
     ext_soft_output = m(ext_ng_outputs) # n_ng, 2
-        
+
 
     lam = np.random.beta(1.0, 1.0)
     rand_index = torch.randperm(images.size()[0]).cuda()
@@ -244,7 +244,7 @@ def make_cutmix_ext(images, labels, model, cam, m,bsz,epoch, ext_images, type_):
     cutmix_labels = torch.zeros_like(labels)
 
     bbx1, bby1, bbx2, bby2 = rand_bbox(images.size(), lam)
-    ng_iidx = [iid for iid in range(len(labels)) if labels[iid] == 1 ] # ng인 애들 
+    ng_iidx = [iid for iid in range(len(labels)) if labels[iid] == 1 ] # ng인 애들
 
     origin_images = torch.clone(images)
     ext_origin_images = torch.clone(ext_images)
@@ -274,7 +274,7 @@ def make_cutmix_ext(images, labels, model, cam, m,bsz,epoch, ext_images, type_):
                     # visualize_imgs(image1, image2, images[iidx],epoch, comb='ok-ng', cam=cam_mask[ng_id,:,:])
             else:
                 raise ValueError("fucked label")
-        elif labels_a[iidx] == 1: 
+        elif labels_a[iidx] == 1:
             if labels_b[iidx] == 0:  # ng <- ok: ng, cut non-defect-region
                 ng_id = ng_iidx.index(iidx)
                 if soft_output[ng_id, 1] >= 0.9 and ext_soft_output[ng_id, 1] >= 0.9 and type_ == 'xo':
@@ -286,8 +286,8 @@ def make_cutmix_ext(images, labels, model, cam, m,bsz,epoch, ext_images, type_):
                     images[iidx, :, bbx1:bbx2, bby1:bby2] = origin_images[iidx_b, :, bbx1:bbx2, bby1:bby2]
                     ext_images[iidx, :, e_bbx1:e_bbx2, e_bby1:e_bby2] = ext_origin_images[iidx_b, :, e_bbx1:e_bbx2, e_bby1:e_bby2]
                     # visualize_imgs(image1, image2, images[iidx], epoch, comb='ng-ok', cam=cam_mask[ng_id,:,:])
-                
-                cutmix_labels[iidx] = 1 
+
+                cutmix_labels[iidx] = 1
 
             elif labels_b[iidx] == 1: # ng <- ng: ng, cut defect-region (box)
                 ng_id = ng_iidx.index(iidx_b) # real_iidx가 ng_idx에서 몇 번째인지
@@ -296,7 +296,7 @@ def make_cutmix_ext(images, labels, model, cam, m,bsz,epoch, ext_images, type_):
                     e_bbx1, e_bbx2, e_bby1, e_bby2 = bbox2(ext_cam_mask[ng_id,:,:]) # bounding box 추출
                     images[iidx, :, bbx1:bbx2, bby1:bby2] = origin_images[iidx_b, :, bbx1:bbx2, bby1:bby2]
                     ext_images[iidx, :, e_bbx1:e_bbx2, e_bby1:e_bby2] = ext_origin_images[iidx_b, :, e_bbx1:e_bbx2, e_bby1:e_bby2]
-     
+
                     # visualize_imgs(image1, image2, images[iidx],epoch, comb='ng-ng', cam=cam_mask[ng_id,:,:])
                 cutmix_labels[iidx] = 1
 
@@ -372,7 +372,10 @@ def set_optimizer(opt, model):
         optimizer = optim.Adam(model.parameters(),
                             lr=opt.learning_rate,
                             weight_decay=opt.weight_decay)
-    
+    elif opt.optimizer == 'ADAMW':
+        optimizer = optim.AdamW(model.parameters(),
+                            lr=opt.learning_rate,
+                            weight_decay=opt.weight_decay)
     elif opt.optimizer == 'SGD':
         optimizer = optim.SGD(model.parameters(),
                             lr=opt.learning_rate,
@@ -386,14 +389,14 @@ def set_optimizer(opt, model):
 def best_accuracy(gts, probs):
     best_th = 0.0
     best_acc = 0.0
-    for th in range(0,200): 
+    for th in range(0,200):
         th = th/200.0
         acc = accuracy_score(gts, probs>=th)
 
         if acc >= best_acc:
             best_acc = acc
             best_th = th
-    
+
     return best_acc, best_th
 
 

@@ -49,7 +49,7 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
             loss_CE = criterion(output, labels)
 
         elif opt.method == 'Joint_Con':
-
+            # images = [images , images] # but not exactly same repetition because of random aug
             images[0] = images[0].cuda(non_blocking=True)
             images[1] = images[1].cuda(non_blocking=True)
 
@@ -72,7 +72,7 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
                 f1_T, f2_T = torch.split(features, [bsz, bsz], dim=0)
             elif opt.head == 'fc':
                 f1_T, f2_T = torch.split(normalize(output,dim=1), [bsz, bsz], dim=0)
-            features_T = torch.cat([f1_T.unsqueeze(1), f2_T.unsqueeze(1)], dim=1)
+            features_T = torch.cat([f1_T.unsqueeze(1), f2_T.unsqueeze(1)], dim=1) # (minibatch, 2, feat_size)
 
             loss_Con = criterion['Con'](features_T, labels)
             loss_CE = criterion['CE'](output, labels_aug)
@@ -104,9 +104,9 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
         if idx == len(trainloader)-1:
         # if idx % 1 == 0:
             print('Train: [{0}][{1}/{2}]\t'
-                  'BT {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'DT {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'loss {loss.val:.3f} ({loss.avg:.3f})'.format(
+                  'BatchTime {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                  'DataTime {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                  'TrainLoss {loss.val:.3f} ({loss.avg:.3f})'.format(
                    epoch, idx + 1, len(trainloader), batch_time=batch_time,
                    data_time=data_time, loss=losses_CE))
             sys.stdout.flush()
@@ -216,9 +216,9 @@ def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
         if idx == len(trainloader_S)-1:
         # if idx % 1 == 0:
             print('Train: [{0}][{1}/{2}]\t'
-                  'BT {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'DT {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'loss {loss.val:.3f} ({loss.avg:.3f})'.format(
+                  'BatchTime {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                  'DataTime {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                  'TrainLoss {loss.val:.3f} ({loss.avg:.3f})'.format(
                    epoch, idx + 1, len(trainloader_S), batch_time=batch_time,
                    data_time=data_time, loss=losses_CE))
             sys.stdout.flush()
@@ -343,9 +343,9 @@ def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
         if idx == len(trainloader_S)-1:
         # if idx % 1 == 0:
             print('Train: [{0}][{1}/{2}]\t'
-                  'BT {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'DT {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'loss {loss.val:.3f} ({loss.avg:.3f})'.format(
+                  'BatchTime {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                  'DataTime {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                  'TrainLoss {loss.val:.3f} ({loss.avg:.3f})'.format(
                    epoch, idx + 1, len(trainloader_S), batch_time=batch_time,
                    data_time=data_time, loss=losses_CE))
             sys.stdout.flush()
@@ -458,7 +458,6 @@ def test(test_loader, model,  opt, metric=None, best_th = None):
         pretrained_dict = torch.load(os.path.join(
                 opt.save_folder, 'bacc_best.pth'))['model']
         model.load_state_dict(pretrained_dict)
-
 
     with torch.no_grad():
         for idx, (images, labels) in enumerate(test_loader):

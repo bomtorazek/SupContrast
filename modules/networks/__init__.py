@@ -8,11 +8,11 @@ from modules.runner.losses import SupConLoss
 def set_model(opt):
 
     if opt.method == 'Joint_Con':
-        model = SupHybResNet(name=opt.model, feat_dim=opt.feat_dim,num_classes=opt.num_cls) 
+        model = SupHybResNet(name=opt.model, feat_dim=opt.feat_dim,num_classes=opt.num_cls)
         criterion = {}
-        criterion['Con'] = SupConLoss(temperature=opt.temp, 
+        criterion['Con'] = SupConLoss(temperature=opt.temp,
                                     loss_type=opt.loss_type)
-        criterion['CE'] = torch.nn.CrossEntropyLoss() 
+        criterion['CE'] = torch.nn.CrossEntropyLoss()
     elif 'CE' in opt.method:
         model = SupCEResNet(name=opt.model, num_classes=opt.num_cls)
         criterion = torch.nn.CrossEntropyLoss()
@@ -23,9 +23,9 @@ def set_model(opt):
         pretrained_dict = torch.load(opt.model_transfer)['model']
         model_dict = model.state_dict()
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
-        model_dict.update(pretrained_dict) 
+        model_dict.update(pretrained_dict)
         model.load_state_dict(model_dict)
-   
+
     if torch.cuda.is_available():
         if torch.cuda.device_count() > 1:
             if opt.dp: # dataparallel to whole model

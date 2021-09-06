@@ -14,11 +14,11 @@ from modules.networks.resnet_dsbn import resnet18dsbn, resnet34dsbn, resnet50dsb
 
 def resnet18(**kwargs):
     return models.resnet18(pretrained=True)
-   
+
 
 def resnet34(**kwargs):
     return models.resnet34(pretrained=True)
- 
+
 
 def resnet50(**kwargs):
     return models.resnet50(pretrained=True)
@@ -26,7 +26,7 @@ def resnet50(**kwargs):
 
 def resnet101(**kwargs):
     return models.resnet101(pretrained=True)
- 
+
 
 model_dict = {
     'resnet18': [resnet18, 512],
@@ -43,7 +43,7 @@ model_dict = {
 class Identity(nn.Module):
     def __init__(self):
         super(Identity, self).__init__()
-        
+
     def forward(self, x):
         return x
 
@@ -91,7 +91,7 @@ class SupHybResNet(nn.Module):
         fc = self.fc(feat) # feat.detach()
         feat = F.normalize(self.head(feat), dim=1)
         return feat, fc
-        
+
 
 
 class SupCEResNet(nn.Module):

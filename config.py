@@ -98,6 +98,8 @@ def parse_option():
         opt.imgset_dir = 'fold.5-5/ratio/100%'
     elif 'vis' in opt.dataset.lower():
         opt.imgset_dir = 'fold.0'
+    elif 'd_sub' in opt.dataset.lower():
+        opt.imgset_dir = ''
     else:
         raise ValueError("Not supported dataset name")
 
@@ -107,6 +109,34 @@ def parse_option():
     ##------------Path------------
     opt.model_path = './save/SupCon/{}_models'.format(opt.dataset)
     opt.tb_path = './save/SupCon/{}_tensorboard'.format(opt.dataset)
+
+    ##------------Model Name------------
+    if opt.train_util_rate > 1.0:
+        opt.train_util_rate = int(opt.train_util_rate)
+    opt.model_name = '{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}'.\
+        format(opt.dataset, opt.model, opt.train_util_rate, opt.method, opt.epochs,opt.learning_rate,
+               opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp)
+
+    if 'Con' in opt.method:
+        opt.model_name += '_' + opt.loss_type
+    opt.model_name += '_sampling_'+ opt.sampling
+
+    if opt.sampling != 'unbalanced':
+        if len(opt.gpu) > 1: #FIXME
+            raise NotImplementedError("""Sampling method is not supported for multi-gpu yet.\n
+                When using unbalaned sampling, recommend that not using multi-gpus due to distribution problems of mini-batches.""")
+        elif 'Joint' not in opt.method:
+            raise ValueError("CE method can only has unbalanced sampling method")
+
+    if opt.whole_data_train:
+        opt.model_name += '_whole_data'
+    else:
+        opt.model_name += f'_fold_{opt.val_fold}'
+
+    if opt.cosine:
+        opt.model_name = '{}_cosine'.format(opt.model_name)
+
+    opt.model_name += f'_trial_{opt.trial}'
 
     ##------------Iteration & LR scheduling------------
     iterations = opt.lr_decay_epochs.split(',') # 700,800,900
@@ -137,40 +167,9 @@ def parse_option():
         if opt.sampling == 'unbalanced':
             raise NotImplementedError("unbalanced sampling with DSBN is not currently supported.")
 
-    ##------------Sampling------------
+    #------------Sampling------------
     if opt.class_balanced: # FIXME
         opt.model_name += '_class_balanced'
-        if opt.sampling != 'warmup':
-            raise NotImplementedError("class_balanced method is only supported for warmup sampling now.")
-
-
-    ##------------Model Name------------
-    if opt.train_util_rate >= 1.0:
-        opt.train_util_rate = int(opt.train_util_rate)
-    opt.model_name = '{}_{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}'.\
-        format(opt.method, opt.dataset, opt.model, opt.train_util_rate, opt.epochs,opt.learning_rate,
-               opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp)
-
-    if 'Con' in opt.method:
-        opt.model_name += '_' + opt.loss_type
-    opt.model_name += '_sampling_'+ opt.sampling
-
-    if opt.sampling != 'unbalanced':
-        if len(opt.gpu) > 1: #FIXME
-            raise NotImplementedError("""Sampling method is not supported for multi-gpu yet.\n
-                When using unbalaned sampling, recommend that not using multi-gpus due to distribution problems of mini-batches.""")
-        elif 'Joint' not in opt.method:
-            raise ValueError("CE method can only has unbalanced sampling method")
-
-    if opt.whole_data_train:
-        opt.model_name += '_whole_data'
-    else:
-        opt.model_name += f'_fold_{opt.val_fold}'
-
-    if opt.cosine:
-        opt.model_name = '{}_cosine'.format(opt.model_name)
-
-    opt.model_name += f'_trial_{opt.trial}'
 
 
     ##------------Tensorboard & Save Folder------------

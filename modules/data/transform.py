@@ -72,6 +72,24 @@ def get_transform(opt, mean, std, scale):
             transforms.ToTensor(),
             normalize,
     ])
+    elif opt.aug.lower() == 'pin':
+        TF = transforms.Compose([
+            transforms.RandomCrop(opt.crop_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalize,
+    ])
+    elif opt.aug.lower() == 'pin-sim':
+        TF = transforms.Compose([
+            transforms.RandomCrop(opt.crop_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomApply([
+                transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
+            ], p=0.8),
+            transforms.RandomGrayscale(p=0.2),
+            transforms.ToTensor(),
+            normalize,
+    ])
     elif opt.aug.lower() == 'sim':
         TF = transforms.Compose([
             transforms.RandomResizedCrop(size=opt.size, scale= scale),

@@ -12,8 +12,6 @@ from modules.networks import set_model, save_model
 from modules.runner import train, train_sampling, train_sampling_dsbn, validate, test
 from config import parse_option
 
-# from modules.pytorch_grad_cam import GradCAMPlusPlus, AblationCAM, EigenCAM
-
 
 def main():
     opt = parse_option()
@@ -50,14 +48,10 @@ def main():
     for epoch in range(1, opt.epochs + 1):
         adjust_learning_rate(opt, optimizer, epoch)
 
-
         if 'warm' in opt.sampling:
             #FIXME duplicated dataloading when using warmup
             target_dataset = loaders['train']['target'].dataset
             source_dataset = loaders['train']['source'].dataset
-            if opt.class_balanced:
-                target_dataset.get_class_balanced()
-                source_dataset.get_class_balanced()
             loaders['train'] = adjust_batch_size(opt, target_dataset, source_dataset, epoch)
 
         # train for one epoch
@@ -65,8 +59,6 @@ def main():
         loss, train_acc = trainer(loaders['train'], model, criterion, optimizer, epoch, opt)
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
-
-
 
         # tensorboard logger
         if opt.method == 'Joint_Con':

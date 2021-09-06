@@ -37,7 +37,6 @@ class GeneralDataset(torch.utils.data.Dataset):
                 self._image_fpaths.append(image_fpath)
                 self._labels.append(label)
 
-
         # For grayscale images
         np_img = np.array(Image.open(self._image_fpaths[0]))
         if np_img.ndim == 2:
@@ -107,17 +106,14 @@ class ClassBalancedDataset(torch.utils.data.Dataset):
         return image, self._labels[index]
 
     def get_class_balanced(self):
-
         # generate labels and fpaths
         num_cls = len(self._image_fpaths_dict.keys())
-        self._image_fpaths = [None] * (self.longest_length * num_cls)
-        self._labels = [None] * (self.longest_length * num_cls)
+        self._image_fpaths = []
+        self._labels = []
 
         classes = list(self._image_fpaths_dict.keys())
-        random.shuffle(classes)
 
         for idx, CLS in enumerate(classes):
-            random.shuffle(self._image_fpaths_dict[CLS])
             if CLS != self.most_common_cls:
                 # augment lists of each class to have the same length with the longest one.
                 num_augment = self.longest_length // len(self._image_fpaths_dict[CLS])
@@ -125,18 +121,8 @@ class ClassBalancedDataset(torch.utils.data.Dataset):
 
                 num_to_choose = self.longest_length % len(self._image_fpaths_dict[CLS])
                 augmented_paths += random.sample(self._image_fpaths_dict[CLS], num_to_choose)
-
             else:
                 augmented_paths = self._image_fpaths_dict[CLS]
 
-            for jdx, aug_path in enumerate(augmented_paths):
-                self._image_fpaths[jdx*num_cls + idx] = aug_path
-                self._labels[jdx*num_cls + idx] = CLS
-
-
-
-
-
-
-
-
+            self._image_fpaths += augmented_paths
+            self._labels += [CLS]*len(augmented_paths)

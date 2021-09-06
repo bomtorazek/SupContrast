@@ -25,7 +25,7 @@ def generate_imageset_by_seed(root, opt):
     SEED = opt.ur_seed
 
     ls_samples = [10, 50, 100]
-    ls_urs = [0.1, 0.3, 0.5]
+    ls_urs = [0.1, 0.3, 0.5, 1.0]
 
     ls_ur_samples = [int(ur*len(whole_names)) for ur in ls_urs]
     ls_total_samples = sorted(ls_samples + ls_ur_samples)
@@ -56,7 +56,7 @@ def load_image_names(data_dir, util_rate, opt):
 
         with open(img_set_pth, 'r') as fid:
             temp = fid.read() # FIXME why fix?
-        train_names = temp.split('\n')[:-1]
+        train_names = temp.strip().split('\n')
         val_names = None
         # no validation phase
         print(f"Get UR from {img_set_name}")
@@ -64,11 +64,11 @@ def load_image_names(data_dir, util_rate, opt):
         # sample training set from train.x-x.txt only
         with open(osp.join(imageset_dir, 'train.{}-{}.txt'.format(opt.test_fold, opt.val_fold)), 'r') as fid:
             temp = fid.read()
-        train_names = temp.split('\n')[:-1]
+        train_names = temp.strip().split('\n')
 
         with open(osp.join(imageset_dir, 'validation.{}-{}.txt'.format(opt.test_fold, opt.val_fold)), 'r') as fid:
             temp = fid.read()
-        val_names = temp.split('\n')[:-1]
+        val_names = temp.strip().split('\n')
 
         if opt.whole_data_train:
             train_names = train_names + val_names
@@ -81,12 +81,22 @@ def load_image_names(data_dir, util_rate, opt):
 
     with open(osp.join(imageset_dir, 'test.{}.txt'.format(opt.test_fold)), 'r') as fid:
         temp = fid.read()
-    test_names = temp.split('\n')[:-1]
+    test_names = temp.strip().split('\n')
 
     return train_names, val_names, test_names
 
 
 def set_loader(opt):
+    train_names_T, val_names_T, test_names_T = load_image_names(opt.target_folder, opt.train_util_rate,opt)
+    print(f"# of target trainset:{len(train_names_T)}")
+
+    # sample image
+    import cv2, os
+    smp_img_pth = os.path.join(opt.target_folder, 'image', train_names_T[0])
+    smp_img = cv2.imread(smp_img_pth)
+    h, w, c = smp_img.shape
+    opt.crop_size = (int(h*7/8), int(w*7/8))
+
     ##----------Transforms----------##
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
@@ -95,18 +105,24 @@ def set_loader(opt):
     normalize = transforms.Normalize(mean=mean, std=std)
     train_transform = get_transform(opt=opt, mean=mean, std=std, scale=scale)
 
-    test_transform = val_transform = transforms.Compose([
-        transforms.Resize(opt.size),
-        transforms.ToTensor(),
-        normalize,
-    ])
+    if opt.aug.lower() in ['pin', 'pin-sim']:
+        test_transform = val_transform = transforms.Compose([
+            transforms.CenterCrop(opt.crop_size),
+            transforms.ToTensor(),
+            normalize,
+        ])
+    else:
+        test_transform = val_transform = transforms.Compose([
+            transforms.Resize(opt.size),
+            transforms.ToTensor(),
+            normalize,
+        ])
     if opt.method == 'Joint_Con':
         train_transform = TwoCropTransform(train_transform)
 
 
     ##----------Dataset----------##
-    train_names_T, val_names_T, test_names_T = load_image_names(opt.target_folder, opt.train_util_rate,opt)
-    print(f"# of target trainset:{len(train_names_T)}")
+    Dataset = ClassBalancedDataset if opt.class_balanced else GeneralDataset
     if 'Joint' in opt.method:
         #train_names_S, _, _ = load_image_names(opt.source_folder, 1.0, opt)
         tr, _, ts = load_image_names(opt.source_folder, 1.0, opt) # val = None
@@ -114,23 +130,21 @@ def set_loader(opt):
         print(f"# of source trainset:{len(train_names_S)}")
 
         if opt.sampling == 'unbalanced':
-            train_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=train_names_T,
+            train_dataset = Dataset(data_dir=opt.target_folder, image_names=train_names_T,
                                             ext_data_dir=opt.source_folder, ext_image_names=train_names_S,
                                             transform=train_transform)
         else:
-            Dataset = ClassBalancedDataset if opt.class_balanced else GeneralDataset
-
             train_dataset_T = Dataset(data_dir=opt.target_folder, image_names=train_names_T,
                                 transform=train_transform)
             train_dataset_S = Dataset(data_dir=opt.source_folder, image_names=train_names_S,
                                 transform=train_transform)
 
     else:
-        train_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=train_names_T,
+        train_dataset = Dataset(data_dir=opt.target_folder, image_names=train_names_T,
                                     transform=train_transform)
 
     if not opt.whole_data_train:
-        val_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=val_names_T,
+        val_dataset = Dataset(data_dir=opt.target_folder, image_names=val_names_T,
                                             transform=val_transform,)
         print(f"# of target valset:{len(val_names_T)}")
 
@@ -142,29 +156,28 @@ def set_loader(opt):
     # It seems that incosistent batch size harms contrastive learning, so drop the last batch
     if opt.sampling == 'unbalanced':
         train_loader = torch.utils.data.DataLoader(
-            train_dataset, batch_size=opt.batch_size, shuffle= True,
-            num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
+            train_dataset, batch_size=opt.batch_size, shuffle=True,
+            num_workers=opt.num_workers, pin_memory=False, sampler=None, drop_last = True)
     else:
-        shuffle = False if opt.class_balanced else True
         assert opt.batch_size%2 == 0
         train_loader_T = torch.utils.data.DataLoader(
-            train_dataset_T, batch_size=opt.batch_size//2, shuffle= shuffle,
-            num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
+            train_dataset_T, batch_size=opt.batch_size//2, shuffle=True,
+            num_workers=opt.num_workers, pin_memory=False, sampler=None, drop_last = True)
         train_loader_S = torch.utils.data.DataLoader(
-            train_dataset_S, batch_size=opt.batch_size//2, shuffle= shuffle,
-            num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
+            train_dataset_S, batch_size=opt.batch_size//2, shuffle=True,
+            num_workers=opt.num_workers, pin_memory=False, sampler=None, drop_last = True)
         train_loader = {'target':train_loader_T, 'source':train_loader_S}
 
     if opt.whole_data_train:
         val_loader = None
     else:
         val_loader = torch.utils.data.DataLoader(
-            val_dataset, batch_size=opt.batch_size, shuffle= False,
-            num_workers=opt.num_workers, pin_memory=True, sampler=None)
+            val_dataset, batch_size=opt.batch_size, shuffle=False,
+            num_workers=opt.num_workers, pin_memory=False, sampler=None)
 
     test_loader = torch.utils.data.DataLoader(
-        test_dataset, batch_size=opt.batch_size, shuffle= False,
-        num_workers=opt.num_workers, pin_memory=True, sampler=None)
+        test_dataset, batch_size=opt.batch_size, shuffle=False,
+        num_workers=opt.num_workers, pin_memory=False, sampler=None)
 
     return { 'train': train_loader, 'val': val_loader, 'test': test_loader}
 
@@ -181,14 +194,11 @@ def adjust_batch_size(opt, train_dataset_T, train_dataset_S, epoch):
     BS_T = round((epoch/opt.epochs)*(last_BS_T - first_BS_T) + first_BS_T)
     BS_S = opt.batch_size - BS_T
 
-    shuffle = False if opt.class_balanced else True
     train_loader_T = torch.utils.data.DataLoader(
-            train_dataset_T, batch_size=BS_T, shuffle= shuffle,
+            train_dataset_T, batch_size=BS_T, shuffle=True,
             num_workers=opt.num_workers, pin_memory=False, sampler=None, drop_last = True)
-            #num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
     train_loader_S = torch.utils.data.DataLoader(
-            train_dataset_S, batch_size=BS_S, shuffle= shuffle,
+            train_dataset_S, batch_size=BS_S, shuffle=True,
             num_workers=opt.num_workers, pin_memory=False, sampler=None, drop_last = True)
-            #num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
 
     return {'target':train_loader_T, 'source':train_loader_S}

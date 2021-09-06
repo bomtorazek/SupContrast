@@ -61,7 +61,7 @@ class SupConLoss(nn.Module):
             anchor_feature = features[:, 0]
             anchor_count = 1
         elif self.contrast_mode == 'all':
-            anchor_feature = contrast_feature
+            anchor_feature = contrast_feature # (2*batch_size, feat_size)
             anchor_count = contrast_count
         else:
             raise ValueError('Unknown mode: {}'.format(self.contrast_mode))
@@ -69,11 +69,11 @@ class SupConLoss(nn.Module):
         # compute logits
         anchor_dot_contrast = torch.div(
             torch.matmul(anchor_feature, contrast_feature.T),
-            self.temperature) # 논문 상의 zi*zp matrix 만듦.
+            self.temperature) # 논문 상의 zi*zp matrix 만듦. # all: (2*bs, 2*bs)
 
-        # for numerical stability,  want to avoid very large logits that lead to NaN problem
-        logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
-        logits = anchor_dot_contrast - logits_max.detach()
+        # for numerical stability, want to avoid very large logits that lead to NaN problem
+        logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True) # all: (2*bs, 1)
+        logits = anchor_dot_contrast - logits_max.detach() # all element is less than or equal to 0
         #graident는 안 변함.
 
         # tile mask
@@ -89,7 +89,7 @@ class SupConLoss(nn.Module):
 
         if self.loss_type == 'pos_denom':
             inverse_mask = 1 - mask # True if other labels are matched
-      
+
         mask = mask * logits_mask
 
         # compute log_prob
@@ -177,13 +177,13 @@ class CrossSupConLoss(nn.Module):
             if labels_A.shape[0] != batch_size or labels_B.shape[0] != batch_size:
                 raise ValueError('Num of labels does not match num of features')
             mask = torch.eq(labels_A, labels_B.T).float().to(device)
-            
+
         else: # 0 1
             mask = mask.float().to(device)
 
         contrast_count = features_A.shape[1] # n_view (augment) of feature
         contrast_feature_A = torch.cat(torch.unbind(features_A, dim=1), dim=0)
-        contrast_feature_B = torch.cat(torch.unbind(features_B, dim=1), dim=0) 
+        contrast_feature_B = torch.cat(torch.unbind(features_B, dim=1), dim=0)
         # make (bsz*n_view, -1), bsz is inner
 
         if self.contrast_mode == 'one':
@@ -198,16 +198,16 @@ class CrossSupConLoss(nn.Module):
         # compute logits
         anchor_dot_contrast = torch.div(
             torch.matmul(anchor_feature, contrast_feature_B.T),
-            self.temperature) # zi * zp mat with size of (bsz*n_view, bsz*n_view) 
+            self.temperature) # zi * zp mat with size of (bsz*n_view, bsz*n_view)
                               # asymmetric for A and B
                               #  (A*B.T).T = (B*A.T)
 
         # for numerical stability, want to avoid very large logits that lead to NaN problem
         logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
-        logits = anchor_dot_contrast - logits_max.detach() 
+        logits = anchor_dot_contrast - logits_max.detach()
         # 어차피 빼도 gradient는 똑같음.
 
-        # tile mask, cause originally shape is (bsz * bsz) -> 
+        # tile mask, cause originally shape is (bsz * bsz) ->
         mask = mask.repeat(anchor_count, contrast_count)
         # mask-out self-contrast cases
         # logits_mask = torch.scatter(
@@ -224,7 +224,7 @@ class CrossSupConLoss(nn.Module):
         # input의 (1,3)을 src의 (1,2로 대체)
         # 이거 그냥 ones에서 diagonal만 0으로 바꾸는 건데? 다시봐도 맞네
 
-        # mask = mask * logits_mask # mask (diagonal 1 from label) * logits_mask ( diagonal 0) 
+        # mask = mask * logits_mask # mask (diagonal 1 from label) * logits_mask ( diagonal 0)
 
         # compute log_prob
         exp_logits = torch.exp(logits)  # * logits_mask # self-cont filtering
