@@ -1,10 +1,12 @@
 import os.path as osp
 from math import ceil
+from torch.utils.data.sampler import WeightedRandomSampler
 
 from torchvision import transforms
 import torch
 import numpy as np
 
+from torchsampler import ImbalancedDatasetSampler, WeightedSampler
 from modules.data.transform import TwoCropTransform, get_transform
 from modules.data.dataset import GeneralDataset, ClassBalancedDataset
 
@@ -108,14 +110,24 @@ def set_loader(opt):
             train_dataset, batch_size=opt.batch_size, shuffle= True,
             num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
     else:
-        shuffle = False if opt.class_balanced else True
+        shuffle = False if opt.class_balanced or 'IDS' in opt.sampling or 'Kang' in opt.sampling else True
         assert opt.batch_size%2 == 0
+        if 'IDS' in opt.sampling:
+            sampler_T = ImbalancedDatasetSampler(train_dataset_T)
+            sampler_S = ImbalancedDatasetSampler(train_dataset_S)
+        elif 'Kang' in opt.sampling:
+            sampler_T = WeightedSampler([1,1])(train_dataset_T)
+            sampler_S = WeightedSampler([1,1])(train_dataset_S)
+        else:
+            sampler_T = sampler_S = None
+
+
         train_loader_T = torch.utils.data.DataLoader(
             train_dataset_T, batch_size=opt.batch_size//2, shuffle= shuffle,
-            num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
+            num_workers=opt.num_workers, pin_memory=True, sampler=sampler_T, drop_last = True)
         train_loader_S = torch.utils.data.DataLoader(
             train_dataset_S, batch_size=opt.batch_size//2, shuffle= shuffle,
-            num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
+            num_workers=opt.num_workers, pin_memory=True, sampler=sampler_S, drop_last = True)
         train_loader = {'target':train_loader_T, 'source':train_loader_S}
         
     if opt.whole_data_train:
