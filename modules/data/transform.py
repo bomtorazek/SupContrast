@@ -72,6 +72,13 @@ def get_transform(opt, mean, std, scale):
             transforms.ToTensor(),
             normalize,
     ])
+    elif opt.aug.lower() == 'flip_crop':
+        TF = transforms.Compose([
+            transforms.RandomResizedCrop(size=opt.size, scale= scale),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalize,
+    ])
     elif opt.aug.lower() == 'sim':
         TF = transforms.Compose([
             transforms.RandomResizedCrop(size=opt.size, scale= scale),

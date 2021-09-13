@@ -14,8 +14,7 @@ class GeneralDataset(torch.utils.data.Dataset):
         self._transform = transform
         self._image_names = image_names
         self._ext_data_dir = ext_data_dir
-        self._ext_image_names = ext_image_names
-        
+        self._ext_image_names = ext_image_names 
 
         anno_fname = 'single_image.2class.json'
         self._anno_json = json.load(open(osp.join(data_dir, 'annotation', anno_fname), 'r'))
@@ -36,7 +35,6 @@ class GeneralDataset(torch.utils.data.Dataset):
 
                 self._image_fpaths.append(image_fpath)
                 self._labels.append(label)
-        
 
         # For grayscale images
         np_img = np.array(Image.open(self._image_fpaths[0]))
@@ -46,6 +44,10 @@ class GeneralDataset(torch.utils.data.Dataset):
             self.is_gray = False
         else:
             raise ValueError("This image might be RGBA, which is not supported yet.") 
+
+        # For Kang's sampler
+        self.subsets = self.get_subsets(2) # binary FIXME
+        self.num_classes = 2
 
     def __len__(self):
         return len(self._image_fpaths)
@@ -61,6 +63,30 @@ class GeneralDataset(torch.utils.data.Dataset):
             image = self._transform(img)
  
         return image, self._labels[index]
+    
+    # For IDS sampler
+    def get_labels(self):
+        return self._labels
+
+    # For Kang's sampler 
+    def get_subsets(self, num_classes=2):
+        """Divide samples into the sets of different classes.
+        Args:
+            samples (list[tuple[str,int,str]]):
+                the list of tuples where each tuple consists of an image path,
+                a classification label, and a segmentation label path.
+            num_classes (int): the total number of classes.
+        Returns:
+            subsets (list[list[int]]):
+                the list of class lists where each class list contains the
+                index of samples of the same class.
+        """
+        subsets = []
+        for label in range(num_classes):
+            subsets.append([])
+        for i, cla_label in enumerate(self._labels):
+            subsets[cla_label].append(i)
+        return subsets
 
 
 class ClassBalancedDataset(torch.utils.data.Dataset):

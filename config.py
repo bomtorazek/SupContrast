@@ -55,7 +55,7 @@ def parse_option():
     parser.add_argument('--ur_from_imageset', action='store_true', default=False,  help='get UR from imageset txt')
     parser.add_argument('--ur_seed', type=int, default = 100, help='seed for ur_from_imageset')
     parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop or Resize')
-    parser.add_argument('--sampling', type=str, default='unbalanced', choices=['unbalanced','balanced','warmup'])
+    parser.add_argument('--sampling', type=str, default='unbalanced', choices=['unbalanced','balanced','warmup','warmIDS', 'warmKang'])
     parser.add_argument('--class_balanced', action='store_true', default =False, help='use class-balanced dataset')
 
     # method
@@ -98,6 +98,8 @@ def parse_option():
         opt.imgset_dir = 'fold.5-5/ratio/100%'
     elif 'vis' in opt.dataset.lower():
         opt.imgset_dir = 'fold.0'
+    elif 'interojo' in opt.dataset.lower():
+        opt.imgset_dir = ''
     else:
         raise ValueError("Not supported dataset name")
 
@@ -170,9 +172,11 @@ def parse_option():
     if opt.cosine:
         opt.model_name = '{}_cosine'.format(opt.model_name)
 
+    opt.model_name += f'_seed_{opt.ur_seed}' # FIXME
     opt.model_name += f'_trial_{opt.trial}'
 
 
+    print(f"model name:{opt.model_name}")
     ##------------Tensorboard & Save Folder------------    
     opt.tb_folder = os.path.join(opt.tb_path, opt.model_name) 
     if not os.path.isdir(opt.tb_folder):

@@ -3,12 +3,14 @@ import os.path as osp
 import numpy as np
 
 ## parameters
-root = '/data/esuh/vistakon/child/imageset/single_image.2class/fold.0'
-# root = '/data/esuh/mlcc/mlcc_crop/05A226_crop/original/imageset/single_image.2class/fold.5-5/ratio/100%'
+# root = '/data/esuh/vistakon/child/imageset/single_image.2class/fold.0'
+root = '/data/esuh/mlcc/mlcc_crop/05A226_crop/original/imageset/single_image.2class/fold.5-5/ratio/100%'
+# root = '/data/esuh/interojo/target/original/imageset/single_images.2class'
+# root = '/data/esuh/interojo/target/original/imageset/single_image.2class'
 train_path = root + '/train.1-1.txt'
 val_path = root + '/validation.1-1.txt'
-ur_tenth = False # for generating ur 0.1
-optimal_seed = 100 # optimal seed, vistakon: 100, 
+ur_tenth = False # for generating ur 0.1 with different seeds
+optimal_seed = 1 # optimal seed, vistakon: 100, MLCC: 1
 
 
 # end of parameters 
@@ -40,10 +42,14 @@ else:
     with open(ur_tenth_train_path, 'r') as fid:
         temp = fid.read()
     train_tenth_names = temp.split('\n')[:-1]
+    train_10th_names = train_tenth_names
     # 10, 50, 100 images
     np.random.seed(optimal_seed)
+    real_train_names = []
     for num_used in [10, 50, 100]:
-        real_train_names = np.random.choice(train_tenth_names, size=num_used, replace=False)
+        train_10th_names = [img for img in train_10th_names if img not in real_train_names]
+        real_size = num_used - len(real_train_names)
+        real_train_names += list(np.random.choice(train_10th_names, size=real_size, replace=False))
         write_path = train_path[:-4] + f'-ur{num_used}-{optimal_seed}.txt'
         with open(write_path, 'w') as f:
             for img in real_train_names:
