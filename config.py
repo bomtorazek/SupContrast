@@ -54,7 +54,7 @@ def parse_option():
     parser.add_argument('--train_util_rate', type=float, default=1.0, help='train util rate')
     parser.add_argument('--ur_from_imageset', action='store_true', default=False,  help='get UR from imageset txt')
     parser.add_argument('--ur_seed', type=int, default = 100, help='seed for ur_from_imageset')
-    parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop or Resize')
+    parser.add_argument('--size', type=str, default='256', help='parameter for RandomResizedCrop or Resize')
     parser.add_argument('--sampling', type=str, default='unbalanced', choices=['unbalanced','balanced','warmup'])
     parser.add_argument('--class_balanced', action='store_true', default =False, help='use class-balanced dataset')
 
@@ -81,12 +81,14 @@ def parse_option():
                         help='choose loss, pos_denom means removing postivies of the denominator, and pos_numer means adding positives on the numerator')
 
     # other setting
+    parser.add_argument('--debug', action='store_true',
+                        help='flag for debugging. check test score at every epoch')
     parser.add_argument('--cosine', action='store_true',
                         help='using cosine annealing')
     parser.add_argument('--syncBN', action='store_true',
                         help='using synchronized batch normalization')
     parser.add_argument('--warm', action='store_true',
-                        help='warm-up for large batch training')
+                        help='learning rate warm-up for large batch training')
     parser.add_argument('--trial', type=str, default='0',
                         help='id for recording multiple runs')
 
@@ -100,11 +102,18 @@ def parse_option():
         opt.imgset_dir = 'fold.0'
     elif 'd_sub' in opt.dataset.lower():
         opt.imgset_dir = ''
+    elif 'solarpannel' in opt.dataset.lower():
+        opt.imgset_dir = 'fold.5-5'
     else:
         raise ValueError("Not supported dataset name")
 
     if opt.ur_from_imageset and not opt.whole_data_train:
         raise ValueError("when using 'ur_from_imageset, need to activate 'whole_data_train")
+
+    if 'x' in opt.size:
+        opt.size = [int(s) for s in opt.size.split('x')]
+    else:
+        opt.size = int(opt.size)
 
     ##------------Path------------
     opt.model_path = './save/SupCon/{}_models'.format(opt.dataset)
@@ -113,8 +122,10 @@ def parse_option():
     ##------------Model Name------------
     if opt.train_util_rate > 1.0:
         opt.train_util_rate = int(opt.train_util_rate)
-    opt.model_name = '{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}'.\
-        format(opt.dataset, opt.model, opt.train_util_rate, opt.method, opt.epochs,opt.learning_rate,
+
+    method = opt.method if opt.model_transfer == None else opt.method + '_transfer'
+    opt.model_name = '{}_{}_ur{}_{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}'.\
+        format(opt.dataset, opt.model, opt.train_util_rate, method, opt.epochs,opt.learning_rate,
                opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp)
 
     if 'Con' in opt.method:
@@ -138,6 +149,7 @@ def parse_option():
 
     opt.model_name += f'_trial_{opt.trial}'
 
+    print('####### {} #########'.format(opt.model_name))
     ##------------Iteration & LR scheduling------------
     iterations = opt.lr_decay_epochs.split(',') # 700,800,900
     opt.lr_decay_epochs = list([])

@@ -3,7 +3,8 @@ import numpy as np
 import re
 #######
 # FIXME
-target_regex = '.*D_Sub_.*'
+#target_regex = '.*D_Sub_.*999.*'
+target_regex = '.*SolarPannel_.*'
 #######
 
 regex = re.compile(target_regex)
@@ -11,13 +12,13 @@ regex = re.compile(target_regex)
 csv = pd.read_csv('./result.csv', sep=',', index_col=0, names=range(7))
 
 ls_name = csv.index.to_list()
-ls_key = list(set([name.split('trial_')[0] for name in ls_name]))
+ls_key = list(set([name.split('trial_')[0] for name in ls_name if regex.match(name)]))
 
 # dictionary version
 dic = {}
 for key in ls_key:
-    if not regex.match(key):
-        continue
+    #if not regex.match(key):
+    #    continue
     for i in range(0,3):
         idx = key+'trial_{}'.format(i)
         if idx in ls_name:

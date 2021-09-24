@@ -105,9 +105,15 @@ def main():
 
             if epoch >= best_epoch + opt.patience:
                 break
-        elif epoch == opt.epochs: # last epoch
-            save_file = os.path.join(opt.save_folder, 'last.pth')
-            save_model(model, optimizer, opt, epoch, save_file)
+        else:
+            if opt.debug:
+                test_auc, test_acc, test_f1 = test(loaders['test'], model, opt, metric='last')
+                print('Test auc: {:.4f}'.format(test_auc), end = ' ')
+                print('Test acc: {:.4f}'.format(test_acc) ,end = ' ')
+                print('Test f1: {:.4f}'.format(test_f1))
+            if epoch == opt.epochs: # last epoch
+                save_file = os.path.join(opt.save_folder, 'last.pth')
+                save_model(model, optimizer, opt, epoch, save_file)
 
     if not opt.whole_data_train:
         test_auc = test(loaders['test'], model, opt, metric='auc')

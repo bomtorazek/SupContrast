@@ -385,8 +385,8 @@ def validate(val_loader, model, criterion, opt):
 
             if opt.method == 'Joint_Con':
                 output = output[1] # feature, output in Joint_Con
-            prob = torch.nn.functional.softmax(output, dim=1)[:,1]
-            probs.extend(prob.tolist())
+            prob = torch.nn.functional.softmax(output, dim=1)
+            probs.extend(prob.detach().cpu().numpy())
 
             if opt.method == 'Joint_Con':
                 loss = criterion['CE'](output, labels)
@@ -415,10 +415,19 @@ def validate(val_loader, model, criterion, opt):
 
     gts = np.array(gts)
     probs = np.array(probs)
-    auc = roc_auc_score(gts, probs)
-    f1 = f1_score(gts, probs>=0.5)
-    best_acc, best_th = best_accuracy(gts,probs)
-    acc05 = accuracy_score(gts, probs>=0.5)
+    aucs = []; f1s = []
+    for i in range(opt.num_cls):
+        auc = roc_auc_score(gts==i, probs[:,i]); aucs.append(auc)
+        f1 = f1_score(gts==i, probs[:,i]>=0.5); f1s.append(f1)
+    auc = np.mean(aucs)
+    f1 = np.mean(f1)
+    acc05 = accuracy_score(gts, np.argmax(probs,axis=1))
+
+    # impossible to calculate best acc when multi-class classification
+    if opt.num_cls == 2:
+        best_acc, best_th = best_accuracy(gts,probs)
+    else:
+        bset_acc, best_th = 0, 0
 
     print('Val auc: {:.3f}'.format(auc), end = ' ')
     print('Val bacc: {:.3f}'.format(best_acc), end = ' ')
@@ -430,35 +439,37 @@ def validate(val_loader, model, criterion, opt):
 
 
 def test(test_loader, model,  opt, metric=None, best_th = None):
-    model.eval()
-
     probs = []
     gts = []
 
-    if best_th is None:
-        if metric == 'auc':
-            pretrained_dict = torch.load(os.path.join(
-                    opt.save_folder, 'auc_best.pth'))['model']
-            model.load_state_dict(pretrained_dict)
-        elif metric == 'acc':
-            pretrained_dict = torch.load(os.path.join(
-                    opt.save_folder, 'acc05_best.pth'))['model']
-            model.load_state_dict(pretrained_dict)
-        elif metric == 'f1':
-            pretrained_dict = torch.load(os.path.join(
-                    opt.save_folder, 'f1_best.pth'))['model']
-            model.load_state_dict(pretrained_dict)
-        elif metric == 'last':
-            pretrained_dict = torch.load(os.path.join(
-                    opt.save_folder, 'last.pth'))['model']
-            model.load_state_dict(pretrained_dict)
+    # load the model
+    if not opt.debug:
+        if best_th is None:
+            if metric == 'auc':
+                pretrained_dict = torch.load(os.path.join(
+                        opt.save_folder, 'auc_best.pth'))['model']
+                model.load_state_dict(pretrained_dict)
+            elif metric == 'acc':
+                pretrained_dict = torch.load(os.path.join(
+                        opt.save_folder, 'acc05_best.pth'))['model']
+                model.load_state_dict(pretrained_dict)
+            elif metric == 'f1':
+                pretrained_dict = torch.load(os.path.join(
+                        opt.save_folder, 'f1_best.pth'))['model']
+                model.load_state_dict(pretrained_dict)
+            elif metric == 'last':
+                pretrained_dict = torch.load(os.path.join(
+                        opt.save_folder, 'last.pth'))['model']
+                model.load_state_dict(pretrained_dict)
+            else:
+                raise ValueError("not supported metric")
         else:
-            raise ValueError("not supported metric")
-    else:
-        pretrained_dict = torch.load(os.path.join(
-                opt.save_folder, 'bacc_best.pth'))['model']
-        model.load_state_dict(pretrained_dict)
+            pretrained_dict = torch.load(os.path.join(
+                    opt.save_folder, 'bacc_best.pth'))['model']
+            model.load_state_dict(pretrained_dict)
 
+    # model prediction
+    model.eval()
     with torch.no_grad():
         for idx, (images, labels) in enumerate(test_loader):
             images = images.float().cuda()
@@ -474,31 +485,35 @@ def test(test_loader, model,  opt, metric=None, best_th = None):
 
             if opt.method == 'Joint_Con':
                 output = output[1]
-            prob = torch.nn.functional.softmax(output, dim=1)[:,1]
-            probs.extend(prob.tolist())
+            prob = torch.nn.functional.softmax(output, dim=1)
+            probs.extend(prob.detach().cpu().numpy())
+    model.train()
 
-
+    # calculate metrics w.r.t. model prediction
     gts = np.array(gts)
     probs = np.array(probs)
 
     if best_th is None:
+        aucs = []; f1s = []
+        for i in range(opt.num_cls):
+            auc = roc_auc_score(gts==i, probs[:,i]); aucs.append(auc)
+            f1 = f1_score(gts==i, probs[:,i]>=0.5); f1s.append(f1)
+        auc = np.mean(aucs)
+        f1 = np.mean(f1)
+        acc = accuracy_score(gts, np.argmax(probs,axis=1))
+
         if metric == 'auc':
-            auc = roc_auc_score(gts, probs)
             return auc
         elif metric == 'acc':
-            acc = accuracy_score(gts, probs>=0.5)
             return acc
         elif metric == 'f1':
-            return f1_score(gts, probs>=0.5)
+            return f1
         elif metric == 'last':
-            auc = roc_auc_score(gts, probs)
-            acc = accuracy_score(gts, probs>=0.5)
-            f1 = f1_score(gts, probs>=0.5)
             return auc, acc, f1
-
         else:
             raise ValueError("unsupported metric")
     else:
+        assert(opt.num_cls == 2)
         bacc = accuracy_score(gts, probs>=best_th)
         best_acc, best_th = best_accuracy(gts,probs)
         return bacc, best_acc, best_th

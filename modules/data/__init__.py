@@ -12,14 +12,13 @@ from modules.data.dataset import GeneralDataset, ClassBalancedDataset
 def generate_imageset_by_seed(root, opt):
     train_path = osp.join(root, 'train.{}-{}.txt'.format(opt.test_fold, opt.val_fold))
     val_path = osp.join(root, 'validation.{}-{}.txt'.format(opt.test_fold, opt.val_fold))
-
     with open(train_path, 'r') as fid:
         temp = fid.read()
-    train_names = temp.strip().split('\n')
+    train_names = temp.strip().split('\n') if not temp == '' else []
 
     with open(val_path, 'r') as fid:
         temp = fid.read()
-    val_names = temp.strip().split('\n')
+    val_names = temp.strip().split('\n') if not temp == '' else []
     whole_names = train_names + val_names
 
     SEED = opt.ur_seed
@@ -44,7 +43,7 @@ def generate_imageset_by_seed(root, opt):
 
 
 def load_image_names(data_dir, util_rate, opt):
-    imageset_dir = osp.join(data_dir, 'imageset/single_image.2class',opt.imgset_dir)
+    imageset_dir = osp.join(data_dir, 'imageset/single_image.{}class'.format(opt.num_cls),opt.imgset_dir)
 
     if opt.ur_from_imageset and data_dir == opt.target_folder:
         # merge train + validation and choose ur% data for training set
@@ -68,7 +67,7 @@ def load_image_names(data_dir, util_rate, opt):
 
         with open(osp.join(imageset_dir, 'validation.{}-{}.txt'.format(opt.test_fold, opt.val_fold)), 'r') as fid:
             temp = fid.read()
-        val_names = temp.strip().split('\n')
+        val_names = temp.strip().split('\n') if not temp == '' else []
 
         if opt.whole_data_train:
             train_names = train_names + val_names
@@ -124,32 +123,33 @@ def set_loader(opt):
     ##----------Dataset----------##
     Dataset = ClassBalancedDataset if opt.class_balanced else GeneralDataset
     if 'Joint' in opt.method:
-        #train_names_S, _, _ = load_image_names(opt.source_folder, 1.0, opt)
-        tr, _, ts = load_image_names(opt.source_folder, 1.0, opt) # val = None
-        train_names_S = tr + ts
+        tr, vl, ts = load_image_names(opt.source_folder, 1.0, opt)
+        train_names_S = tr + ts if vl == None else tr + vl + ts
+
         print(f"# of source trainset:{len(train_names_S)}")
 
         if opt.sampling == 'unbalanced':
-            train_dataset = Dataset(data_dir=opt.target_folder, image_names=train_names_T,
-                                            ext_data_dir=opt.source_folder, ext_image_names=train_names_S,
-                                            transform=train_transform)
+            train_dataset = Dataset(data_dir=opt.target_folder, num_cls=opt.num_cls,
+                                    image_names=train_names_T,
+                                    ext_data_dir=opt.source_folder, ext_image_names=train_names_S,
+                                    transform=train_transform)
         else:
-            train_dataset_T = Dataset(data_dir=opt.target_folder, image_names=train_names_T,
-                                transform=train_transform)
-            train_dataset_S = Dataset(data_dir=opt.source_folder, image_names=train_names_S,
-                                transform=train_transform)
+            train_dataset_T = Dataset(data_dir=opt.target_folder, num_cls=opt.num_cls,
+                                      image_names=train_names_T, transform=train_transform)
+            train_dataset_S = Dataset(data_dir=opt.source_folder, num_cls=opt.num_cls,
+                                      image_names=train_names_S, transform=train_transform)
 
     else:
-        train_dataset = Dataset(data_dir=opt.target_folder, image_names=train_names_T,
-                                    transform=train_transform)
+        train_dataset = Dataset(data_dir=opt.target_folder, num_cls=opt.num_cls,
+                                image_names=train_names_T, transform=train_transform)
 
     if not opt.whole_data_train:
-        val_dataset = Dataset(data_dir=opt.target_folder, image_names=val_names_T,
-                                            transform=val_transform,)
+        val_dataset = Dataset(data_dir=opt.target_folder, num_cls=opt.num_cls,
+                              image_names=val_names_T, transform=val_transform,)
         print(f"# of target valset:{len(val_names_T)}")
 
-    test_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=test_names_T,
-                                    transform=test_transform)
+    test_dataset = GeneralDataset(data_dir=opt.target_folder, num_cls=opt.num_cls,
+                                  image_names=test_names_T, transform=test_transform)
     print(f"# of target testset:{len(test_names_T)}")
 
     ##----------Dataloader----------##

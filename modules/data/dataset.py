@@ -9,15 +9,16 @@ from PIL import Image
 
 
 class GeneralDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir,image_names, ext_data_dir=None, ext_image_names=None, transform=None ):
+    def __init__(self, data_dir, num_cls, image_names, ext_data_dir=None, ext_image_names=None, transform=None):
         self._data_dir = data_dir
+        self._num_cls = num_cls
         self._transform = transform
         self._image_names = image_names
         self._ext_data_dir = ext_data_dir
         self._ext_image_names = ext_image_names
 
 
-        anno_fname = 'single_image.2class.json'
+        anno_fname = 'single_image.{}class.json'.format(self._num_cls)
         self._anno_json = json.load(open(osp.join(data_dir, 'annotation', anno_fname), 'r'))
 
         self._image_fpaths, self._labels = [], []
@@ -63,12 +64,13 @@ class GeneralDataset(torch.utils.data.Dataset):
 
 
 class ClassBalancedDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir, image_names, transform=None ):
+    def __init__(self, data_dir, num_cls, image_names, transform=None):
         self._data_dir = data_dir
+        self._num_cls = num_cls
         self._transform = transform
         self._image_names = image_names
 
-        anno_fname = 'single_image.2class.json'
+        anno_fname = 'single_image.{}class.json'.format(self._num_cls)
         self._anno_json = json.load(open(osp.join(data_dir, 'annotation', anno_fname), 'r'))
 
         # make dict for each class
