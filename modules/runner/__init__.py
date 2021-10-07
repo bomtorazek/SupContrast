@@ -6,7 +6,7 @@ from torch.nn.functional import normalize
 from sklearn.metrics import roc_auc_score, f1_score, accuracy_score
 import numpy as np
 
-from util import AverageMeter, warmup_learning_rate, accuracy, best_accuracy
+from util import AverageMeter, warmup_learning_rate, accuracy, best_accuracy, mixup_data
 
 
 
@@ -157,12 +157,20 @@ def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
             images = torch.cat([images_T, images_S], dim=0)
             images = images.cuda(non_blocking=True)
 
+            if opt.mixup:
+                is_inter = True if opt.mixup == 'inter_class' else False
+                images, labels_a, labels_b, lam = mixup_data(images, labels, inter_class=is_inter)
+
             # warm-up learning rate
             warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
 
             # compute loss
             output = model(images)
-            loss_CE = criterion(output, labels)
+
+            if opt.mixup:
+                loss_CE = lam * criterion(output, labels_a) + (1 - lam) * criterion(output, labels_b)
+            else:
+                loss_CE = criterion(output, labels)
             
         elif opt.method == 'Joint_Con':
             if idx ==0:

@@ -1,14 +1,14 @@
 from __future__ import print_function
 
 import math
+import random
+from collections import defaultdict
+
 import numpy as np
 import torch
 import torch.optim as optim
 
 from sklearn.metrics import accuracy_score
-
-
-import random
 import matplotlib.pyplot as plt
 from PIL import Image
 import cv2
@@ -72,6 +72,34 @@ def visualize_imgs(img1, img2, img12, epoch, comb , cam = None):
     plt.close(fig)
     plt.close()
     fig.clf()
+
+def mixup_data(x, y, alpha=1.0, inter_class=True):
+    '''Returns mixed inputs, pairs of targets, and lambda'''
+    lam = np.random.beta(alpha, alpha)
+
+    batch_size = x.size()[0]
+
+    if not inter_class: # only intra_class
+        # 1. gathering w.r.t. label
+        class_idx = defaultdict(list)
+        for idx, label in enumerate(y):
+            class_idx[label.item()].append(idx)
+        
+        # 2. shuffle between each label
+        mixed_x = x
+        for cls_ in class_idx.keys():
+            origin_idx = class_idx[cls_]
+            permuted_idx = random.sample(origin_idx, len(origin_idx))
+            mixed_x[origin_idx, :] = lam * mixed_x[origin_idx, :] + (1 - lam) * mixed_x[permuted_idx, :]
+        y_a = y_b = y
+    
+    else:
+        index = torch.randperm(batch_size).cuda()
+        mixed_x = lam * x + (1 - lam) * x[index, :]
+        y_a, y_b = y, y[index]
+
+    return mixed_x, y_a, y_b, lam
+
 
 
 def bbox2(img):

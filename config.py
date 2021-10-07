@@ -63,6 +63,9 @@ def parse_option():
                         choices=['SupCon', 'SimCLR', 'Joint_Con', 'Joint_CE', 'CE'], help='choose method')
     parser.add_argument('--aug', type=str, default='sim',
                         help='augmentation type, rand_3_5, cutmix_0.5_PP_ox or AB or EI, stacked_rand_2_10 ')
+    parser.add_argument('--mixup', type=str, default='',
+                        choices=['inter_class', 'intra_class', ''])
+
 
     # temperature and hypers
     parser.add_argument('--temp', type=float, default=0.08,
@@ -98,10 +101,9 @@ def parse_option():
         opt.imgset_dir = 'fold.5-5/ratio/100%'
     elif 'vis' in opt.dataset.lower():
         opt.imgset_dir = 'fold.0'
-    elif 'interojo' in opt.dataset.lower():
-        opt.imgset_dir = ''
     else:
-        raise ValueError("Not supported dataset name")
+        opt.imgset_dir = ''
+
 
     if opt.ur_from_imageset and not opt.whole_data_train:
         raise ValueError("when using 'ur_from_imageset, need to activate 'whole_data_train")
@@ -153,6 +155,8 @@ def parse_option():
         format(opt.method, opt.dataset, opt.model, opt.train_util_rate, opt.epochs,opt.learning_rate,
                opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp)
     
+    if opt.model_transfer is not None:
+        opt.model_name += '_IL'
     if 'Con' in opt.method:
         opt.model_name += '_' + opt.loss_type
     opt.model_name += '_sampling_'+ opt.sampling 
@@ -171,6 +175,9 @@ def parse_option():
 
     if opt.cosine:
         opt.model_name = '{}_cosine'.format(opt.model_name)
+    
+    if opt.mixup:
+        opt.model_name += f'_{opt.mixup}'
 
     opt.model_name += f'_seed_{opt.ur_seed}' # FIXME
     opt.model_name += f'_trial_{opt.trial}'
