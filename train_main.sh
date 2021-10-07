@@ -12,10 +12,58 @@
    
 
 
-for FOLD in 1; do
-    python main_ce.py \
-        --train_util_rate=0.1 --batch_size=4 --val_fold=${FOLD} --dataset=Vistakon --size=512 \
-        --data_folder=/data/esuh/vistakon/child \
-        --source_data_folder=/data/esuh/vistakon/parent \
-        --patience=200 --epochs=15 --weight_decay=0 --cosine --method=Joint_Con_Whole --learning_rate=0.0001
+### -----------------------------Vistakon------------------------------------------------
+# for TR in 0 1 2 3 4; do
+#     for SEED in 100; do
+#         for SAMP in balanced; do
+
+#             python main.py \
+#                 --train_util_rate=0.1 --batch_size=16 --dataset=Vistakon --size=512 \
+#                 --target_folder=/data/esuh/vistakon/child \
+#                 --source_folder=/data/esuh/vistakon/parent \
+#                 --model=resnet18dsbn \
+#                 --epochs=30 --weight_decay=0 --cosine --method=Joint_Con --learning_rate=0.0001 --loss_type=SupCon \
+#                 --whole_data_train --ur_from_imageset --ur_seed=${SEED} --trial=${TR} --sampling=${SAMP} \
+#                 --gpu=0
+
+#         done
+#     done
+# done
+
+## -------------------------------MLCC --------------------------------
+
+for TR in 0 1 2 3 4; do
+    for SEED in 100; do
+
+        python main.py \
+            --train_util_rate=0.1 --batch_size=64 --dataset=MLCCA --size=256 \
+            --target_folder=/data/esuh/mlcc/mlcc_crop/05A226_crop/original \
+            --source_folder=/data/esuh/mlcc/mlcc_crop/05B104_crop/original \
+            --model=resnet18 \
+            --epochs=200 --weight_decay=0 --cosine --method=Joint_Con --learning_rate=0.0001 --loss_type=pos_denom \
+            --whole_data_train --trial=${TR} --sampling=${SAMP} \
+            --gpu=0
+
+    done
+done
+
+## -------------------- other ur for vistakon ----------------------
+
+for UR in 10 50 100; do
+    for EPH in 5 10 30; do
+        for SAMP in balanced warmup; do
+            for TR in 0 1 2 3 4; do
+
+            python main.py \
+                --train_util_rate=${UR} --batch_size=8 --dataset=Vistakon --size=512 \
+                --target_folder=/data/esuh/vistakon/child \
+                --source_folder=/data/esuh/vistakon/parent \
+                --model=resnet18 \
+                --epochs=${EPH} --weight_decay=0 --cosine --method=Joint_Con --learning_rate=0.0001 --loss_type=SupCon \
+                --whole_data_train --ur_from_imageset --ur_seed=100 --trial=${TR} --sampling=${SAMP} \
+                --gpu=3
+
+            done
+        done
+    done
 done
