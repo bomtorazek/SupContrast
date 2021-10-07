@@ -101,6 +101,8 @@ def parse_option():
         opt.imgset_dir = 'fold.5-5/ratio/100%'
     elif 'vis' in opt.dataset.lower():
         opt.imgset_dir = 'fold.0'
+    elif 'interojo' in opt.dataset.lower():
+        opt.imgset_dir = ''
     else:
         opt.imgset_dir = ''
 
