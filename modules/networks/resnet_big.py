@@ -9,8 +9,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import models
 
-from modules.networks.resnet_dsbn import resnet18dsbn, resnet34dsbn, resnet50dsbn, resnet101dsbn
-
 
 def resnet18(**kwargs):
     return models.resnet18(pretrained=True)
@@ -33,10 +31,6 @@ model_dict = {
     'resnet34': [resnet34, 512],
     'resnet50': [resnet50, 2048],
     'resnet101': [resnet101, 2048],
-    'resnet18dsbn': [resnet18dsbn, 512],
-    'resnet34dsbn': [resnet34dsbn, 512],
-    'resnet50dsbn': [resnet50dsbn, 2048],
-    'resnet101dsbn': [resnet101dsbn, 2048],
 }
 
 

@@ -54,9 +54,13 @@ def parse_option():
     parser.add_argument('--train_util_rate', type=float, default=1.0, help='train util rate')
     parser.add_argument('--ur_from_imageset', action='store_true', default=False,  help='get UR from imageset txt')
     parser.add_argument('--ur_seed', type=int, default = 100, help='seed for ur_from_imageset')
-    parser.add_argument('--size', type=str, default='256', help='parameter for RandomResizedCrop or Resize')
+    parser.add_argument('--size', type=str, default='-1', help='parameter for RandomResizedCrop or Resize')
     parser.add_argument('--sampling', type=str, default='unbalanced', choices=['unbalanced','balanced','warmup'])
     parser.add_argument('--class_balanced', action='store_true', default =False, help='use class-balanced dataset')
+
+    # source sampling
+    parser.add_argument('--source_util_rate', type=float, default=1.0, help='source train util rate')
+    parser.add_argument('--source_fixed', action='store_true', default=False,  help='sample fixed amount of source dataset')
 
     # method
     parser.add_argument('--method', type=str, default='SupCon',
@@ -113,7 +117,7 @@ def parse_option():
     if 'x' in opt.size:
         opt.size = [int(s) for s in opt.size.split('x')]
     else:
-        opt.size = int(opt.size)
+        opt.size = [int(opt.size), int(opt.size)]
 
     ##------------Path------------
     opt.model_path = './save/SupCon/{}_models'.format(opt.dataset)
@@ -138,6 +142,11 @@ def parse_option():
                 When using unbalaned sampling, recommend that not using multi-gpus due to distribution problems of mini-batches.""")
         elif 'Joint' not in opt.method:
             raise ValueError("CE method can only has unbalanced sampling method")
+
+    if opt.source_util_rate != 1.0:
+        opt.model_name += '_urSRC_' + str(opt.source_util_rate)
+        if opt.source_fixed:
+            opt.model_name += '_fixedSRC'
 
     if opt.whole_data_train:
         opt.model_name += '_whole_data'
@@ -169,15 +178,6 @@ def parse_option():
                     1 + math.cos(math.pi * opt.warm_epochs / opt.epochs)) / 2
         else:
             opt.warmup_to = opt.learning_rate
-
-    ##------------DSBN------------
-    opt.dsbn = False
-    if 'dsbn' in opt.model:
-        opt.dsbn = True
-        if 'Joint' not in opt.method:
-            raise ValueError("dsbn is only for Joint methods")
-        if opt.sampling == 'unbalanced':
-            raise NotImplementedError("unbalanced sampling with DSBN is not currently supported.")
 
     #------------Sampling------------
     if opt.class_balanced: # FIXME

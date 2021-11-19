@@ -7,9 +7,9 @@ import tensorboard_logger as tb_logger
 
 from util import adjust_learning_rate
 from util import set_optimizer
-from modules.data import set_loader, adjust_batch_size
+from modules.data import set_loader
 from modules.networks import set_model, save_model
-from modules.runner import train, train_sampling, train_sampling_dsbn, validate, test
+from modules.runner import train, train_sampling, validate, test
 from config import parse_option
 
 
@@ -24,9 +24,6 @@ def main():
         best_epoch = 0
         best_f1 = 0.0
 
-    # build data loader
-    loaders = set_loader(opt) # tuple or dict
-
     # build model and criterion
     model, criterion = set_model(opt)
 
@@ -39,26 +36,25 @@ def main():
     if opt.sampling == 'unbalanced':
         trainer = train
     elif 'warm' in opt.sampling or opt.sampling == 'balanced':
-        if opt.dsbn:
-            trainer = train_sampling_dsbn
-        else:
-            trainer = train_sampling
+        trainer = train_sampling
+
+    # flag for initialize dataloader for every epoch or not (e.g., warm up, non-fixed source sampling)
+    init_loader_everyep = \
+        opt.sampling=='warmup' \
+        or opt.source_util_rate < 1.0
 
     # training routine
+    opt.t0 = time.time()
     for epoch in range(1, opt.epochs + 1):
+        opt.epoch = epoch
+        if epoch == 1 or init_loader_everyep:
+            # build data loader
+            loaders = set_loader(opt) # tuple or dict
+
         adjust_learning_rate(opt, optimizer, epoch)
 
-        if 'warm' in opt.sampling:
-            #FIXME duplicated dataloading when using warmup
-            target_dataset = loaders['train']['target'].dataset
-            source_dataset = loaders['train']['source'].dataset
-            loaders['train'] = adjust_batch_size(opt, target_dataset, source_dataset, epoch)
-
         # train for one epoch
-        time1 = time.time()
         loss, train_acc = trainer(loaders['train'], model, criterion, optimizer, epoch, opt)
-        time2 = time.time()
-        print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
         # tensorboard logger
         if opt.method == 'Joint_Con':
@@ -136,7 +132,7 @@ def main():
             row = [opt.model_name, 'auc', test_auc, 'acc', test_bacc, 'th', best_th,
                     'acc_0.5',test_acc,'acc_test_best', test_Bacc,'test_th',test_th, 'f1', test_f1 ]
         else:
-            row = [opt.model_name, 'auc', test_auc, 'acc', test_acc, 'f1', test_f1 ]
+            row = [opt.model_name, 'auc', test_auc, 'acc', test_acc, 'f1', test_f1, 'time', time.time()-opt.t0 ]
         writer.writerow(row)
 
 if __name__ == '__main__':

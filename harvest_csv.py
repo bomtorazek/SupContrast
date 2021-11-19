@@ -3,13 +3,13 @@ import numpy as np
 import re
 #######
 # FIXME
-#target_regex = '.*D_Sub_.*999.*'
+#target_regex = '.*D_Sub_.*'
 target_regex = '.*SolarPannel_.*'
 #######
 
 regex = re.compile(target_regex)
 
-csv = pd.read_csv('./result.csv', sep=',', index_col=0, names=range(7))
+csv = pd.read_csv('./result.csv', sep=',', index_col=0, names=range(8))
 
 ls_name = csv.index.to_list()
 ls_key = list(set([name.split('trial_')[0] for name in ls_name if regex.match(name)]))

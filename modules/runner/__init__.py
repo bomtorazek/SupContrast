@@ -53,12 +53,6 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
             images[0] = images[0].cuda(non_blocking=True)
             images[1] = images[1].cuda(non_blocking=True)
 
-            # if CUTMIX:
-            #     r = np.random.rand(1)
-            #     if r < cutmix_prob:
-            #         images[0], images[1], labels = make_cutmix_ext(images=images[0], labels=labels, model=model,
-            #                                         cam=cam, m=m, bsz=bsz, epoch=epoch, ext_images=images[1], type_=cutmix_type)
-
             images = torch.cat([images[0], images[1]], dim=0)
             labels = labels.cuda(non_blocking=True)
             labels_aug = torch.cat([labels, labels], dim=0)
@@ -102,13 +96,13 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
 
         # print info
         if idx == len(trainloader)-1:
-        # if idx % 1 == 0:
-            print('Train: [{0}][{1}/{2}]\t'
-                  'BatchTime {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'DataTime {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'TrainLoss {loss.val:.3f} ({loss.avg:.3f})'.format(
+            print('Train: [{0:4d}][{1:4d}/{2:4d}]\t \
+                  BatchTime {batch_time.val:.3f} ({batch_time.avg:.3f})\t \
+                  DataTime {data_time.val:.3f} ({data_time.avg:.3f})\t \
+                  TrainLoss {loss.val:.3f} ({loss.avg:.3f})\t \
+                  OverallTime {overall_time:.3f}'.format(
                    epoch, idx + 1, len(trainloader), batch_time=batch_time,
-                   data_time=data_time, loss=losses_CE))
+                   data_time=data_time, loss=losses_CE, overall_time=time.time()-opt.t0))
             sys.stdout.flush()
     if opt.method == 'Joint_Con':
         return {'CE':losses_CE.avg, 'Con': losses_Con.avg}, top1.avg
@@ -214,140 +208,14 @@ def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
 
         # print info
         if idx == len(trainloader_S)-1:
-        # if idx % 1 == 0:
-            print('Train: [{0}][{1}/{2}]\t'
-                  'BatchTime {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'DataTime {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'TrainLoss {loss.val:.3f} ({loss.avg:.3f})'.format(
+            print('Train: [{0:4d}][{1:4d}/{2:4d}]\t \
+                  BatchTime {batch_time.val:.3f} ({batch_time.avg:.3f})\t \
+                  DataTime {data_time.val:.3f} ({data_time.avg:.3f})\t \
+                  TrainLoss {loss.val:.3f} ({loss.avg:.3f})\t \
+                  OverallTime {overall_time:.3f}'.format(
                    epoch, idx + 1, len(trainloader_S), batch_time=batch_time,
-                   data_time=data_time, loss=losses_CE))
+                   data_time=data_time, loss=losses_CE, overall_time=time.time()-opt.t0))
             sys.stdout.flush()
-    if opt.method == 'Joint_Con':
-        return {'CE':losses_CE.avg, 'Con': losses_Con.avg}, top1.avg
-    elif 'CE' in opt.method:
-        return losses_CE.avg, top1.avg
-    else:
-        raise ValueError("check method")
-
-
-def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
-    """one epoch training"""
-    model.train()
-
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
-    losses_CE = AverageMeter()
-    top1 = AverageMeter()
-
-    if opt.method == 'Joint_Con':
-        losses_Con = AverageMeter()
-    end = time.time()
-
-    trainloader_T = trainloader['target']
-    trainloader_S = trainloader['source']
-
-    iter_T = iter(trainloader_T)
-    iter_S = iter(trainloader_S)
-
-    for idx in range(len(trainloader_S)): # FIXME assume that # of source dataset is larger than # of target dataset
-        try:
-            images_T, labels_T = iter_T.next()
-        except:
-            iter_T = iter(trainloader_T)
-            images_T, labels_T = iter_T.next()
-        images_S, labels_S = iter_S.next()
-
-        third = len(trainloader_S)//3
-        if idx % third == 0:
-            print(f'{idx}/{len(trainloader_S)}')
-
-        data_time.update(time.time() - end)
-        labels = torch.cat([labels_T, labels_S], dim=0)
-        labels = labels.cuda(non_blocking=True)
-        bsz = labels.shape[0]
-
-        # target to zeros, source to ones
-        domain_idx_T = torch.zeros(labels_T.shape[0], dtype=torch.long).cuda(non_blocking=True)
-        domain_idx_S = torch.ones(labels_S.shape[0], dtype=torch.long).cuda(non_blocking=True)
-
-
-        if opt.method == 'Joint_CE':
-            images_T = images_T.cuda(non_blocking=True)
-            images_S = images_S.cuda(non_blocking=True)
-
-            # warm-up learning rate
-            warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
-
-            # compute loss
-            output_T = model(images_T, domain_idx_T)
-            output_S = model(images_S, domain_idx_S)
-            output = torch.cat([output_T, output_S], dim=0)
-            loss_CE = criterion(output, labels)
-
-        elif opt.method == 'Joint_Con':
-            if idx ==0:
-                print(images_T[0].shape, 'target')
-                print(images_S[0].shape, 'source')
-
-            images_T = torch.cat([images_T[0], images_T[1]], dim=0).cuda(non_blocking=True)
-            images_S = torch.cat([images_S[0], images_S[1]], dim=0).cuda(non_blocking=True)
-            labels_aug = torch.cat([labels, labels], dim=0)
-
-            warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
-
-            # compute loss
-            features_T, output_T = model(images_T, domain_idx_T)
-            features_S, output_S = model(images_S, domain_idx_S)
-
-            features_T0, features_T1 = features_T.chunk(2)
-            features_S0, features_S1 = features_S.chunk(2)
-            output_T0, output_T1 = output_T.chunk(2)
-            output_S0, output_S1 = output_S.chunk(2)
-
-            features = torch.cat([features_T0, features_S0, features_T1, features_S1], dim=0)
-            output = torch.cat([output_T0, output_S0, output_T1, output_S1], dim=0)
-
-            if opt.head == 'mlp':
-                f0, f1 = torch.split(features, [bsz, bsz], dim=0)
-            elif opt.head == 'fc':
-                f0, f1 = torch.split(normalize(output,dim=1), [bsz, bsz], dim=0)
-            features = torch.cat([f0.unsqueeze(1), f1.unsqueeze(1)], dim=1)
-
-            loss_Con = criterion['Con'](features, labels)
-            loss_CE = criterion['CE'](output, labels_aug)
-        else:
-            raise ValueError("check method")
-
-        # update metric
-        losses_CE.update(loss_CE.item(), bsz)
-        if opt.method == 'Joint_Con':
-            losses_Con.update(loss_Con.item(), bsz)
-        elif 'CE' not in opt.method:
-            raise ValueError("check method")
-        acc1 = accuracy(output[:bsz,:], labels[:bsz])
-        top1.update(acc1[0], bsz)
-
-        # SGD
-        optimizer.zero_grad()
-        total_loss = loss_CE
-        if opt.method == 'Joint_Con':
-            total_loss = total_loss*opt.l_ce + loss_Con
-        total_loss.backward()
-        optimizer.step()
-
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
-
-        # print info
-        if idx == len(trainloader_S)-1:
-        # if idx % 1 == 0:
-            print('Train: [{0}][{1}/{2}]\t'
-                  'BatchTime {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'DataTime {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'TrainLoss {loss.val:.3f} ({loss.avg:.3f})'.format(
-                   epoch, idx + 1, len(trainloader_S), batch_time=batch_time,
-                   data_time=data_time, loss=losses_CE))
             sys.stdout.flush()
     if opt.method == 'Joint_Con':
         return {'CE':losses_CE.avg, 'Con': losses_Con.avg}, top1.avg
@@ -377,11 +245,7 @@ def validate(val_loader, model, criterion, opt):
             bsz = labels.shape[0]
 
             # forward
-            if opt.dsbn:
-                domain_idx_T = torch.zeros(labels.shape[0], dtype=torch.long).cuda()
-                output = model(images, domain_idx_T)
-            else:
-                output = model(images)
+            output = model(images)
 
             if opt.method == 'Joint_Con':
                 output = output[1] # feature, output in Joint_Con
@@ -477,11 +341,7 @@ def test(test_loader, model,  opt, metric=None, best_th = None):
             labels = labels.cuda()
 
             # forward
-            if opt.dsbn:
-                domain_idx_T = torch.zeros(labels.shape[0], dtype=torch.long).cuda()
-                output = model(images, domain_idx_T)
-            else:
-                output = model(images)
+            output = model(images)
 
             if opt.method == 'Joint_Con':
                 output = output[1]

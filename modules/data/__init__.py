@@ -58,7 +58,6 @@ def load_image_names(data_dir, util_rate, opt):
         train_names = temp.strip().split('\n')
         val_names = None
         # no validation phase
-        print(f"Get UR from {img_set_name}")
     else:
         # sample training set from train.x-x.txt only
         with open(osp.join(imageset_dir, 'train.{}-{}.txt'.format(opt.test_fold, opt.val_fold)), 'r') as fid:
@@ -87,14 +86,17 @@ def load_image_names(data_dir, util_rate, opt):
 
 def set_loader(opt):
     train_names_T, val_names_T, test_names_T = load_image_names(opt.target_folder, opt.train_util_rate,opt)
-    print(f"# of target trainset:{len(train_names_T)}")
+    verb = ''
+    verb += f"# of target trainset:{len(train_names_T)}\n"
 
     # sample image
-    import cv2, os
-    smp_img_pth = os.path.join(opt.target_folder, 'image', train_names_T[0])
-    smp_img = cv2.imread(smp_img_pth)
-    h, w, c = smp_img.shape
-    opt.crop_size = (int(h*7/8), int(w*7/8))
+    if -1 in opt.size:
+        import cv2, os
+        smp_img_pth = os.path.join(opt.target_folder, 'image', train_names_T[0])
+        smp_img = cv2.imread(smp_img_pth)
+        h, w, c = smp_img.shape
+        opt.size = (h, w)
+    opt.crop_size = (int(opt.size[0]*7/8), int(opt.size[1]*7/8))
 
     ##----------Transforms----------##
     mean = (0.485, 0.456, 0.406)
@@ -104,7 +106,7 @@ def set_loader(opt):
     normalize = transforms.Normalize(mean=mean, std=std)
     train_transform = get_transform(opt=opt, mean=mean, std=std, scale=scale)
 
-    if opt.aug.lower() in ['pin', 'pin-sim']:
+    if opt.aug.lower() in ['pin', 'pin-sim', 'resize_crop']:
         test_transform = val_transform = transforms.Compose([
             transforms.CenterCrop(opt.crop_size),
             transforms.ToTensor(),
@@ -125,8 +127,12 @@ def set_loader(opt):
     if 'Joint' in opt.method:
         tr, vl, ts = load_image_names(opt.source_folder, 1.0, opt)
         train_names_S = tr + ts if vl == None else tr + vl + ts
+        # sample source
+        if opt.source_fixed:
+            np.random.seed(opt.ur_seed)
+        train_names_S = np.random.choice(train_names_S, int(len(train_names_S)*opt.source_util_rate), replace=False)
 
-        print(f"# of source trainset:{len(train_names_S)}")
+        verb += f"# of source trainset:{len(train_names_S)}\n"
 
         if opt.sampling == 'unbalanced':
             train_dataset = Dataset(data_dir=opt.target_folder, num_cls=opt.num_cls,
@@ -146,11 +152,11 @@ def set_loader(opt):
     if not opt.whole_data_train:
         val_dataset = Dataset(data_dir=opt.target_folder, num_cls=opt.num_cls,
                               image_names=val_names_T, transform=val_transform,)
-        print(f"# of target valset:{len(val_names_T)}")
+        verb += f"# of target valset:{len(val_names_T)}\n"
 
     test_dataset = GeneralDataset(data_dir=opt.target_folder, num_cls=opt.num_cls,
                                   image_names=test_names_T, transform=test_transform)
-    print(f"# of target testset:{len(test_names_T)}")
+    verb += f"# of target testset:{len(test_names_T)}\n"
 
     ##----------Dataloader----------##
     # It seems that incosistent batch size harms contrastive learning, so drop the last batch
@@ -158,7 +164,7 @@ def set_loader(opt):
         train_loader = torch.utils.data.DataLoader(
             train_dataset, batch_size=opt.batch_size, shuffle=True,
             num_workers=opt.num_workers, pin_memory=False, sampler=None, drop_last = True)
-    else:
+    elif opt.sampling == 'balanced':
         assert opt.batch_size%2 == 0
         train_loader_T = torch.utils.data.DataLoader(
             train_dataset_T, batch_size=opt.batch_size//2, shuffle=True,
@@ -167,6 +173,21 @@ def set_loader(opt):
             train_dataset_S, batch_size=opt.batch_size//2, shuffle=True,
             num_workers=opt.num_workers, pin_memory=False, sampler=None, drop_last = True)
         train_loader = {'target':train_loader_T, 'source':train_loader_S}
+    elif opt.sampling == 'warmup':
+        num_T = len(train_dataset_T)
+        num_S = len(train_dataset_S)
+        first_BS_T = ceil(opt.batch_size * num_T/(num_T + num_S))
+        last_BS_T = opt.batch_size // 2
+        BS_T = round((opt.epoch/opt.epochs)*(last_BS_T - first_BS_T) + first_BS_T)
+        BS_S = opt.batch_size - BS_T
+
+        train_loader_T = torch.utils.data.DataLoader(
+                train_dataset_T, batch_size=BS_T, shuffle=True,
+                num_workers=opt.num_workers, pin_memory=False, sampler=None, drop_last = True)
+        train_loader_S = torch.utils.data.DataLoader(
+                train_dataset_S, batch_size=BS_S, shuffle=True,
+                num_workers=opt.num_workers, pin_memory=False, sampler=None, drop_last = True)
+        train_loader =  {'target':train_loader_T, 'source':train_loader_S}
 
     if opt.whole_data_train:
         val_loader = None
@@ -179,26 +200,7 @@ def set_loader(opt):
         test_dataset, batch_size=opt.batch_size, shuffle=False,
         num_workers=opt.num_workers, pin_memory=False, sampler=None)
 
+    if opt.epoch == 1:
+        print(verb)
+
     return { 'train': train_loader, 'val': val_loader, 'test': test_loader}
-
-def adjust_batch_size(opt, train_dataset_T, train_dataset_S, epoch):
-    """
-    Assume that the number of target images is less than source images by default.
-    """
-    num_T = len(train_dataset_T)
-    num_S = len(train_dataset_S)
-
-    first_BS_T = ceil(opt.batch_size * num_T/(num_T + num_S))
-    last_BS_T = opt.batch_size // 2
-
-    BS_T = round((epoch/opt.epochs)*(last_BS_T - first_BS_T) + first_BS_T)
-    BS_S = opt.batch_size - BS_T
-
-    train_loader_T = torch.utils.data.DataLoader(
-            train_dataset_T, batch_size=BS_T, shuffle=True,
-            num_workers=opt.num_workers, pin_memory=False, sampler=None, drop_last = True)
-    train_loader_S = torch.utils.data.DataLoader(
-            train_dataset_S, batch_size=BS_S, shuffle=True,
-            num_workers=opt.num_workers, pin_memory=False, sampler=None, drop_last = True)
-
-    return {'target':train_loader_T, 'source':train_loader_S}
