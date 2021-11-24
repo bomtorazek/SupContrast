@@ -13,7 +13,7 @@ def parse_option():
                         help='save frequency')
     parser.add_argument('--batch_size', type=int, default=256,
                         help='batch_size')
-    parser.add_argument('--num_workers', type=int, default=16,
+    parser.add_argument('--num_workers', type=int, default=1,
                         help='num of workers to use, 16?')
     parser.add_argument('--epochs', type=int, default=1000,
                         help='number of training epochs')
@@ -64,13 +64,13 @@ def parse_option():
     parser.add_argument('--aug', type=str, default='sim',
                         help='augmentation type, rand_3_5, cutmix_0.5_PP_ox or AB or EI, stacked_rand_2_10 ')
     parser.add_argument('--mixup', type=str, default='',
-                        choices=['inter_class', 'intra_class', ''])
+                        choices=['inter_class', 'intra_class'])
 
 
     # temperature and hypers
     parser.add_argument('--temp', type=float, default=0.08,
                         help='temperature for loss function')
-    parser.add_argument('--l_ce', type=float, default=1.0,
+    parser.add_argument('--l_con', type=float, default=1.0,
                         help='lambda for cont loss')
     parser.add_argument('--head', type=str, default='mlp',
                         choices=['mlp', 'fc'],
@@ -160,7 +160,7 @@ def parse_option():
     if opt.model_transfer is not None:
         opt.model_name += '_IL'
     if 'Con' in opt.method:
-        opt.model_name += '_' + opt.loss_type
+        opt.model_name += '_' + opt.loss_type + '_lambda' + str(opt.l_con)  + '_'
     opt.model_name += '_sampling_'+ opt.sampling 
 
     if opt.sampling != 'unbalanced':

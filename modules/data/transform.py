@@ -4,6 +4,7 @@ import torch
 from torchvision import transforms
 import numpy as np
 
+from modules.data.aug_lib import TrivialAugment
 from modules.data.RandAugment import rand_augment_transform
 
 class TwoCropTransform:
@@ -139,6 +140,15 @@ def get_transform(opt, mean, std, scale):
             transforms.ToTensor(),
             normalize
         ])
+    elif opt.aug.lower() == 'trivial':
+        print('wow')
+        TF = transforms.Compose([ 
+            TrivialAugment(),
+            transforms.RandomResizedCrop(size=opt.size, scale= scale),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalize
+            ])
     else:
         raise NotImplementedError("Unsupported augmentaton name")
 

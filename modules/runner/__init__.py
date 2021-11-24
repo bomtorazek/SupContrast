@@ -92,7 +92,7 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
         optimizer.zero_grad()
         total_loss = loss_CE
         if opt.method == 'Joint_Con':
-            total_loss = total_loss*opt.l_ce + loss_Con 
+            total_loss = total_loss + loss_Con *opt.l_con
         total_loss.backward()
         optimizer.step()
 
@@ -142,11 +142,17 @@ def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
         except:
             iter_T = iter(trainloader_T)
             images_T, labels_T = iter_T.next()
-        images_S, labels_S = iter_S.next()
+
+        try:
+            images_S, labels_S = iter_S.next()
+        except:
+            iter_S = iter(trainloader_S)
+            images_S, labels_S = iter_S.next()
 
         third = len(trainloader_S)//3
         if idx % third == 0:
-            print(f'{idx}/{len(trainloader_S)}')
+            print(f'{idx}/{len(trainloader_S)}', end = ' ')
+            
 
         data_time.update(time.time() - end)
         labels = torch.cat([labels_T, labels_S], dim=0)
@@ -156,6 +162,7 @@ def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
         if opt.method == 'Joint_CE':
             images = torch.cat([images_T, images_S], dim=0)
             images = images.cuda(non_blocking=True)
+
 
             if opt.mixup:
                 is_inter = True if opt.mixup == 'inter_class' else False
@@ -212,7 +219,7 @@ def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
         optimizer.zero_grad()
         total_loss = loss_CE
         if opt.method == 'Joint_Con':
-            total_loss = total_loss*opt.l_ce + loss_Con 
+            total_loss = total_loss + loss_Con *opt.l_con
         total_loss.backward()
         optimizer.step()
 
@@ -226,9 +233,13 @@ def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
             print('Train: [{0}][{1}/{2}]\t'
                   'BT {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'DT {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'loss {loss.val:.3f} ({loss.avg:.3f})'.format(
+                  'loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
                    epoch, idx + 1, len(trainloader_S), batch_time=batch_time,
-                   data_time=data_time, loss=losses_CE))
+                   data_time=data_time, loss=losses_CE), end = '')
+            if opt.method == 'Joint_Con':
+                print('con_loss {loss.val:.4f} ({loss.avg:.4f}'.format(loss=losses_Con))
+            else:
+                print('\n')
             sys.stdout.flush()
     if opt.method == 'Joint_Con':
         return {'CE':losses_CE.avg, 'Con': losses_Con.avg}, top1.avg
@@ -339,7 +350,7 @@ def train_sampling_dsbn(trainloader, model, criterion, optimizer, epoch, opt):
         optimizer.zero_grad()
         total_loss = loss_CE
         if opt.method == 'Joint_Con':
-            total_loss = total_loss*opt.l_ce + loss_Con 
+            total_loss = total_loss + loss_Con *opt.l_con
         total_loss.backward()
         optimizer.step()
 
