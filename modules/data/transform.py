@@ -141,7 +141,6 @@ def get_transform(opt, mean, std, scale):
             normalize
         ])
     elif opt.aug.lower() == 'trivial':
-        print('wow')
         TF = transforms.Compose([ 
             TrivialAugment(),
             transforms.RandomResizedCrop(size=opt.size, scale= scale),

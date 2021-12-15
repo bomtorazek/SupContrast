@@ -66,7 +66,7 @@ def set_loader(opt):
         transforms.ToTensor(),
         normalize,
     ])
-    if opt.method == 'Joint_Con':
+    if opt.method == 'Joint_Con' and not opt.one_crop:
         train_transform =TwoCropTransform(train_transform)
 
     

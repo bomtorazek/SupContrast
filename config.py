@@ -73,8 +73,8 @@ def parse_option():
     parser.add_argument('--l_con', type=float, default=1.0,
                         help='lambda for cont loss')
     parser.add_argument('--head', type=str, default='mlp',
-                        choices=['mlp', 'fc'],
-                        help='mlp or fc')
+                        choices=['mlp'],
+                        help='mlp only')
     parser.add_argument('--feat_dim', type=int, default=128,
                         help='dim of feature head')
     parser.add_argument('--dp', action='store_true', default=False,
@@ -82,6 +82,9 @@ def parse_option():
     parser.add_argument('--loss_type', type=str, default='SupCon',
                         choices=['SupCon', 'pos_denom', 'pos_numer'], 
                         help='choose loss, pos_denom means removing postivies of the denominator, and pos_numer means adding positives on the numerator')
+    parser.add_argument('--one_crop', action='store_true', default=False,
+                        help='if one_crop -> do not use two crop augmentation')
+
 
     # other setting
     parser.add_argument('--cosine', action='store_true',
@@ -153,9 +156,9 @@ def parse_option():
     ##------------Model Name------------
     if opt.train_util_rate >= 1.0:
         opt.train_util_rate = int(opt.train_util_rate)
-    opt.model_name = '{}_{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_bsz_{}_rsz_{}_temp_{}'.\
+    opt.model_name = '{}_{}_{}_ur{}_me{}_lr_{}_decay_{}_aug_{}_twocrop_{}_bsz_{}_rsz_{}_temp_{}'.\
         format(opt.method, opt.dataset, opt.model, opt.train_util_rate, opt.epochs,opt.learning_rate,
-               opt.weight_decay, opt.aug, opt.batch_size, opt.size, opt.temp)
+               opt.weight_decay, opt.aug, not opt.one_crop, opt.batch_size, opt.size, opt.temp)
     
     if opt.model_transfer is not None:
         opt.model_name += '_IL'

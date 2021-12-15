@@ -181,28 +181,38 @@ def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
             
         elif opt.method == 'Joint_Con':
             if idx ==0:
-                print(images_T[0].shape, 'target')
-                print(images_S[0].shape, 'source')
-                
-            images0 = torch.cat([images_T[0], images_S[0]], dim=0)
-            images1 = torch.cat([images_T[1], images_S[1]], dim=0)
-
-            images = torch.cat([images0, images1], dim=0).cuda(non_blocking=True)
-            labels_aug = torch.cat([labels, labels], dim=0)
+                if opt.one_crop:
+                    print(images_T.shape, 'target')
+                    print(images_S.shape, 'source')
+                else:    
+                    print(images_T[0].shape, 'target')
+                    print(images_S[0].shape, 'source')
+    
+        
+            if opt.one_crop:
+                images = torch.cat([images_T, images_S], dim=0).cuda(non_blocking=True)
+                labels_aug = labels
+            
+            else:
+                images0 = torch.cat([images_T[0], images_S[0]], dim=0)
+                images1 = torch.cat([images_T[1], images_S[1]], dim=0)
+                images = torch.cat([images0, images1], dim=0).cuda(non_blocking=True)
+                labels_aug = torch.cat([labels, labels], dim=0)
             
             warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
 
             # compute loss
             features, output = model(images)
 
-            if opt.head == 'mlp':
+            if opt.one_crop:
+                features = features.unsqueeze(1)
+            else:
                 f0, f1 = torch.split(features, [bsz, bsz], dim=0)
-            elif opt.head == 'fc':
-                f0, f1 = torch.split(normalize(output,dim=1), [bsz, bsz], dim=0)
-            features = torch.cat([f0.unsqueeze(1), f1.unsqueeze(1)], dim=1)
+                features = torch.cat([f0.unsqueeze(1), f1.unsqueeze(1)], dim=1)
             
             loss_Con = criterion['Con'](features, labels)
             loss_CE = criterion['CE'](output, labels_aug)
+
         else:
             raise ValueError("check method")  
 
