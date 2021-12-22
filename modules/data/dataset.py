@@ -9,13 +9,14 @@ from PIL import Image
 
 
 class GeneralDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir,image_names, ext_data_dir=None, ext_image_names=None, transform=None ):
+    def __init__(self, data_dir,image_names, ext_data_dir=None, ext_image_names=None, transform=None, use_domain_tag=False):
         self._data_dir = data_dir
         self._transform = transform
         self._image_names = image_names
         self._ext_data_dir = ext_data_dir
         self._ext_image_names = ext_image_names 
-
+        self.use_domain_tag = use_domain_tag
+        
         anno_fname = 'single_image.2class.json'
         self._anno_json = json.load(open(osp.join(data_dir, 'annotation', anno_fname), 'r'))
 
@@ -26,6 +27,10 @@ class GeneralDataset(torch.utils.data.Dataset):
 
             self._image_fpaths.append(image_fpath)
             self._labels.append(label)
+        
+        if use_domain_tag: # target is zero
+            self.domain_tags = [0]*len(self._image_fpaths)
+            self.target_size = len(self._image_fpaths)
 
         if self._ext_data_dir is not None:
             self._ext_anno_json = json.load(open(osp.join(ext_data_dir, 'annotation', anno_fname), 'r'))
@@ -35,6 +40,9 @@ class GeneralDataset(torch.utils.data.Dataset):
 
                 self._image_fpaths.append(image_fpath)
                 self._labels.append(label)
+            if use_domain_tag:
+                self.source_size = len(self._image_fpaths) - self.target_size
+                self.domain_tags += [1]*self.source_size # source is one
 
         # For grayscale images
         np_img = np.array(Image.open(self._image_fpaths[0]))
@@ -46,7 +54,9 @@ class GeneralDataset(torch.utils.data.Dataset):
             raise ValueError("This image might be RGBA, which is not supported yet.") 
 
         # For Kang's sampler
-        self.subsets = self.get_subsets(2) # binary FIXME
+        self.subsets = self.get_subsets(2) 
+        if use_domain_tag: # For DomainKang's sampler
+            self.domain_subsets = self.get_domain_subsets(num_domains=2)
         self.num_classes = 2
 
     def __len__(self):
@@ -61,8 +71,11 @@ class GeneralDataset(torch.utils.data.Dataset):
 
         if self._transform is not None:
             image = self._transform(img)
- 
-        return image, self._labels[index]
+
+        if self.use_domain_tag:
+            return image, self._labels[index], self.domain_tags[index]
+        else:
+            return image, self._labels[index]
     
     # For IDS sampler
     def get_labels(self):
@@ -86,6 +99,14 @@ class GeneralDataset(torch.utils.data.Dataset):
             subsets.append([])
         for i, cla_label in enumerate(self._labels):
             subsets[cla_label].append(i)
+        return subsets
+    
+    def get_domain_subsets(self, num_domains=2):
+        subsets = []
+        for domain in range(num_domains):
+            subsets.append([])
+        for i, tag in enumerate(self.domain_tags):
+            subsets[tag].append(i)
         return subsets
 
 

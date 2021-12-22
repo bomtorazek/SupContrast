@@ -13,7 +13,7 @@ def parse_option():
                         help='save frequency')
     parser.add_argument('--batch_size', type=int, default=256,
                         help='batch_size')
-    parser.add_argument('--num_workers', type=int, default=1,
+    parser.add_argument('--num_workers', type=int, default=16,
                         help='num of workers to use, 16?')
     parser.add_argument('--epochs', type=int, default=1000,
                         help='number of training epochs')
@@ -55,7 +55,7 @@ def parse_option():
     parser.add_argument('--ur_from_imageset', action='store_true', default=False,  help='get UR from imageset txt')
     parser.add_argument('--ur_seed', type=int, default = 100, help='seed for ur_from_imageset')
     parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop or Resize')
-    parser.add_argument('--sampling', type=str, default='unbalanced', choices=['unbalanced','balanced','warmup','warmIDS', 'warmKang'])
+    parser.add_argument('--sampling', type=str, default='unbalanced', choices=['unbalanced','balanced','warmup','warmIDS', 'warmKang', 'domainKang'])
     parser.add_argument('--class_balanced', action='store_true', default =False, help='use class-balanced dataset')
 
     # method

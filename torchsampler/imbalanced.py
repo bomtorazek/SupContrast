@@ -77,6 +77,149 @@ def shuffle(*arys):
         return shuffled[0]
     return shuffled
 
+
+
+class DomainWeightedSampler(torch.utils.data.Sampler):
+    def __init__(
+        self,
+        datapoints,
+        num_domains,
+        weights
+    ):
+        self.datapoints = datapoints
+        self.num_domains = num_domains
+        self.weights = self.get_weights(weights, num_domains)
+        self.subsets = self.datapoints.domain_subsets
+        self.weighted_subset_sizes = self.get_weighted_subset_sizes(self.weights, self.subsets)
+
+    def __iter__(self):
+        print(self.weighted_subset_sizes)
+        domain_indices = [None]* self.num_domains
+        for domain, weighted_subset_size in enumerate(self.weighted_subset_sizes):
+            domain_indices[domain] = shuffle(self.sample_subset(domain, weighted_subset_size))
+        
+        domain_pointer, total_pointer = [0]*self.num_domains, 0
+        max_unit = self.weighted_subset_sizes[0]//self.weights[0]
+        indices = np.array([0]* (max_unit * sum(self.weights)))
+        for _ in range(max_unit):
+            for domain in range(self.num_domains):
+                d_weight = self.weights[domain]
+                indices[total_pointer: total_pointer + d_weight] = domain_indices[domain][domain_pointer[domain]: domain_pointer[domain]+ d_weight]
+                domain_pointer[domain]+= d_weight
+                total_pointer += d_weight
+
+        return iter(indices)
+
+    def __len__(self):
+        return sum(self.weighted_subset_sizes)
+
+    def get_weights(self, weights, num_domains):
+        if weights is None:
+            return [ 1 for i in range(num_domains) ]
+        else:
+            if len(weights) != num_domains:
+                raise Exception("the length of weights must be equal to num_classes")
+            return weights
+
+    def get_weighted_subset_sizes(self, weights, subsets):
+        # subsets -> [[indices of target images], [indices of source images]]
+        reduced_subset_sizes = list(
+            map(
+                lambda tup: int(np.ceil(tup[0]/tup[1])),
+                zip(
+                    map(lambda subset: len(subset), subsets),  # [397,64] 
+                    weights  # [3,1] 
+                )  # [(397,3), (64,1)]
+            )  # [133, 64] == [# of target // target weight, # of source // source weight]
+        )
+        max_unit = max(reduced_subset_sizes)  # 133
+        units = [ max_unit if size != 0 else 0 for size in reduced_subset_sizes ]
+        return [ int(np.round(w * u)) for w, u in zip(weights, units) ] # 399, 133
+
+    def sample_subset(self, domain, weighted_subset_size):
+        # (0, 399) or (1, 133)
+        # (0, 216) or (1, 1512)
+        subset = self.subsets[domain]
+        subset_size = len(subset)
+        if weighted_subset_size == 0 or subset_size == 0:
+            return []
+        if weighted_subset_size < subset_size:
+            raise Exception("weighted_subset_size must not be smaller than subset_size")
+        q = weighted_subset_size // subset_size
+        r = weighted_subset_size % subset_size
+        return q * subset + np.random.choice(subset, r, replace=False).tolist()
+    
+    def apply_domain_weight(self, domain_weight):
+        self.weights = domain_weight
+        print(self.weights)
+        self.weighted_subset_sizes = self.get_weighted_subset_sizes(self.weights, self.subsets)
+        
+
+
+class DomainWeightedSampler_origin(torch.utils.data.Sampler):
+    def __init__(
+        self,
+        datapoints,
+        num_domains,
+        weights
+    ):
+        self.datapoints = datapoints
+        self.num_domains = num_domains
+        self.weights = self.get_weights(weights, num_domains)
+        self.subsets = self.datapoints.domain_subsets
+        self.weighted_subset_sizes = self.get_weighted_subset_sizes(self.weights, self.subsets)
+
+    def __iter__(self):
+        indices = []
+        print(self.weighted_subset_sizes)
+        for domain, weighted_subset_size in enumerate(self.weighted_subset_sizes):
+            indices += self.sample_subset(domain, weighted_subset_size)
+        return iter(shuffle(indices))
+
+    def __len__(self):
+        return sum(self.weighted_subset_sizes)
+
+    def get_weights(self, weights, num_domains):
+        if weights is None:
+            return [ 1 for i in range(num_domains) ]
+        else:
+            if len(weights) != num_domains:
+                raise Exception("the length of weights must be equal to num_classes")
+            return weights
+
+    def get_weighted_subset_sizes(self, weights, subsets):
+        # subsets -> [[indices of target images], [indices of source images]]
+        reduced_subset_sizes = list(
+            map(
+                lambda tup: int(np.ceil(tup[0]/tup[1])),
+                zip(
+                    map(lambda subset: len(subset), subsets),  # [397,64] 
+                    weights  # [3,1] 
+                )  # [(397,3), (64,1)]
+            )  # [133, 64] == [# of target // target weight, # of source // source weight]
+        )
+        max_unit = max(reduced_subset_sizes)  # 133
+        units = [ max_unit if size != 0 else 0 for size in reduced_subset_sizes ]
+        return [ int(np.round(w * u)) for w, u in zip(weights, units) ] # 399, 133
+
+    def sample_subset(self, domain, weighted_subset_size):
+        # (0, 399) or (1, 133)
+        subset = self.subsets[domain]
+        subset_size = len(subset)
+        if weighted_subset_size == 0 or subset_size == 0:
+            return []
+        if weighted_subset_size < subset_size:
+            raise Exception("weighted_subset_size must not be smaller than subset_size")
+        q = weighted_subset_size // subset_size
+        r = weighted_subset_size % subset_size
+        return q * subset + np.random.choice(subset, r, replace=False).tolist()
+    
+    def apply_domain_weight(self, domain_weight):
+        self.weights = domain_weight
+        print(self.weights)
+        self.weighted_subset_sizes = self.get_weighted_subset_sizes(self.weights, self.subsets)
+        
+
 class WeightedSampler(torch.utils.data.Sampler):
     def __init__(self, weights=None):
         self.weights = weights

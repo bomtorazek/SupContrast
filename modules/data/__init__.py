@@ -6,7 +6,7 @@ from torchvision import transforms
 import torch
 import numpy as np
 
-from torchsampler import ImbalancedDatasetSampler, WeightedSampler
+from torchsampler import ImbalancedDatasetSampler, WeightedSampler, DomainWeightedSampler
 from modules.data.transform import TwoCropTransform, get_transform
 from modules.data.dataset import GeneralDataset, ClassBalancedDataset
 
@@ -77,10 +77,13 @@ def set_loader(opt):
         train_names_S, _, _ = load_image_names(opt.source_folder, 1.0, opt)
         print(f"# of source trainset:{len(train_names_S)}")
         
-        if opt.sampling == 'unbalanced':
+        if opt.sampling == 'unbalanced' or opt.sampling == 'domainKang':
+            use_domain_tag = (opt.sampling == 'domainKang')
             train_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=train_names_T,
                                             ext_data_dir=opt.source_folder, ext_image_names=train_names_S,
-                                            transform=train_transform)
+                                            transform=train_transform, use_domain_tag=use_domain_tag)
+    
+            
         else:
             Dataset = ClassBalancedDataset if opt.class_balanced else GeneralDataset
 
@@ -109,6 +112,11 @@ def set_loader(opt):
         train_loader = torch.utils.data.DataLoader(
             train_dataset, batch_size=opt.batch_size, shuffle= True,
             num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
+    elif opt.sampling == 'domainKang':
+        sampler = DomainWeightedSampler(datapoints=train_dataset, num_domains=2, weights=(1,1))
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=opt.batch_size, shuffle= False,
+            num_workers=opt.num_workers, pin_memory=True, sampler=sampler, drop_last = True)
     else:
         shuffle = False if opt.class_balanced or 'IDS' in opt.sampling or 'Kang' in opt.sampling else True
         assert opt.batch_size%2 == 0
@@ -165,3 +173,16 @@ def adjust_batch_size(opt, train_dataset_T, train_dataset_S, epoch):
         num_workers=opt.num_workers, pin_memory=True, sampler=None, drop_last = True)
     
     return {'target':train_loader_T, 'source':train_loader_S}
+
+
+def adjust_domain_weight(opt, num_T, num_S, epoch):
+    """
+    Assume that the number of target images is less than source images by default.
+    """
+    first_BS_T = ceil(opt.batch_size * num_T/(num_T + num_S))
+    last_BS_T = opt.batch_size // 2
+
+    weight_T = round((epoch/opt.epochs)*(last_BS_T - first_BS_T) + first_BS_T)
+    weight_S = opt.batch_size - weight_T
+    
+    return weight_T, weight_S

@@ -7,7 +7,7 @@ import tensorboard_logger as tb_logger
 
 from util import adjust_learning_rate
 from util import set_optimizer
-from modules.data import set_loader, adjust_batch_size
+from modules.data import set_loader, adjust_batch_size, adjust_domain_weight
 from modules.networks import set_model, save_model
 from modules.runner import train, train_sampling, train_sampling_dsbn, validate, test
 from config import parse_option
@@ -38,7 +38,7 @@ def main():
     # tensorboard
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
 
-    if opt.sampling == 'unbalanced':
+    if opt.sampling == 'unbalanced' or opt.sampling == 'domainKang':
         trainer = train
     elif 'warm' in opt.sampling or opt.sampling == 'balanced':
         if opt.dsbn:
@@ -50,7 +50,6 @@ def main():
     for epoch in range(1, opt.epochs + 1):
         adjust_learning_rate(opt, optimizer, epoch)
 
-
         if 'warm' in opt.sampling:
             #FIXME duplicated dataloading when using warmup
             target_dataset = loaders['train']['target'].dataset
@@ -59,6 +58,10 @@ def main():
                 target_dataset.get_class_balanced()
                 source_dataset.get_class_balanced()
             loaders['train'] = adjust_batch_size(opt, target_dataset, source_dataset, epoch)
+        elif opt.sampling == 'domainKang':
+            n_t, n_s = loaders['train'].dataset.target_size, loaders['train'].dataset.source_size
+            domain_weight = adjust_domain_weight(opt, n_t, n_s, epoch)
+            loaders['train'].sampler.apply_domain_weight(domain_weight)
 
         # train for one epoch
         time1 = time.time()

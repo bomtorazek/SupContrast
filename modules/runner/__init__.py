@@ -33,10 +33,19 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
         losses_Con = AverageMeter()
     end = time.time()
 
+    for idx, samples in enumerate(trainloader):
+        if opt.sampling == 'domainKang':
+            images, labels, domain_tags = samples
+        else:
+            images, labels = samples
 
-    for idx, (images, labels) in enumerate(trainloader):   
+        third = len(trainloader)//3
+        if idx % third == 0:
+            print(f'{idx}/{len(trainloader)}', end = ' ')
+
         data_time.update(time.time() - end)
         bsz = labels.shape[0]
+
         if 'CE' in opt.method:
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
@@ -50,29 +59,34 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
             
         elif opt.method == 'Joint_Con':
             
-            images[0] = images[0].cuda(non_blocking=True)
-            images[1] = images[1].cuda(non_blocking=True)
+            if opt.one_crop:
+                images = images.cuda(non_blocking=True)
+                labels = labels.cuda(non_blocking=True)
+                labels_aug = labels
+            else:
+                images[0] = images[0].cuda(non_blocking=True)
+                images[1] = images[1].cuda(non_blocking=True)
+                images = torch.cat([images[0], images[1]], dim=0)
+            
+                # if CUTMIX:
+                #     r = np.random.rand(1)
+                #     if r < cutmix_prob:
+                #         images[0], images[1], labels = make_cutmix_ext(images=images[0], labels=labels, model=model,
+                #                                         cam=cam, m=m, bsz=bsz, epoch=epoch, ext_images=images[1], type_=cutmix_type)
 
-            # if CUTMIX:
-            #     r = np.random.rand(1)
-            #     if r < cutmix_prob:
-            #         images[0], images[1], labels = make_cutmix_ext(images=images[0], labels=labels, model=model,
-            #                                         cam=cam, m=m, bsz=bsz, epoch=epoch, ext_images=images[1], type_=cutmix_type)
-
-            images = torch.cat([images[0], images[1]], dim=0)
-            labels = labels.cuda(non_blocking=True)
-            labels_aug = torch.cat([labels, labels], dim=0)
+                labels = labels.cuda(non_blocking=True)
+                labels_aug = torch.cat([labels, labels], dim=0)
             
             warmup_learning_rate(opt, epoch, idx, len(trainloader), optimizer)
 
 
             # compute loss
             features, output = model(images)
-            if opt.head == 'mlp':
+            if opt.one_crop:
+                features_T = features.unsqueeze(1)
+            else:
                 f1_T, f2_T = torch.split(features, [bsz, bsz], dim=0)
-            elif opt.head == 'fc':
-                f1_T, f2_T = torch.split(normalize(output,dim=1), [bsz, bsz], dim=0)
-            features_T = torch.cat([f1_T.unsqueeze(1), f2_T.unsqueeze(1)], dim=1)
+                features_T = torch.cat([f1_T.unsqueeze(1), f2_T.unsqueeze(1)], dim=1)
             
             loss_Con = criterion['Con'](features_T, labels)
             loss_CE = criterion['CE'](output, labels_aug)
