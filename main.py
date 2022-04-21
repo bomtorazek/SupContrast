@@ -46,6 +46,10 @@ def main():
         else:
             trainer = train_sampling
 
+
+    if opt.source_sampling is not None:
+        image_indices_list = None
+
     # training routine
     for epoch in range(1, opt.epochs + 1):
         adjust_learning_rate(opt, optimizer, epoch)
@@ -61,11 +65,14 @@ def main():
         elif opt.sampling == 'domainKang':
             n_t, n_s = loaders['train'].dataset.target_size, loaders['train'].dataset.source_size
             domain_weight = adjust_domain_weight(opt, n_t, n_s, epoch)
-            loaders['train'].sampler.apply_domain_weight(domain_weight)
+            loaders['train'].sampler.apply_domain_weight(domain_weight, opt.source_rate, image_indices_list)
 
         # train for one epoch
         time1 = time.time()
-        loss, train_acc = trainer(loaders['train'], model, criterion, optimizer, epoch, opt)
+        if opt.source_sampling is not None:
+            loss, train_acc, image_indices_list = trainer(loaders['train'], model, criterion, optimizer, epoch, opt)
+        else:
+            loss, train_acc = trainer(loaders['train'], model, criterion, optimizer, epoch, opt)
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
@@ -135,7 +142,7 @@ def main():
         print('Test acc: {:.4f}'.format(test_bacc) ,end = ' ')
         print('Test th: {:.2f}'.format(best_th))
     else:
-        test_auc, test_acc, test_f1 = test(loaders['test'], model, opt, metric='last')
+        test_auc, test_acc, test_f1, probs, gts = test(loaders['test'], model, opt, metric='last')
         print('Test auc: {:.4f}'.format(test_auc), end = ' ')
         print('Test acc: {:.4f}'.format(test_acc) ,end = ' ')
         print('Test f1: {:.4f}'.format(test_f1))

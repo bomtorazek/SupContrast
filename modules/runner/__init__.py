@@ -3,6 +3,7 @@ import sys, os
 
 import torch
 from torch.nn.functional import normalize
+import torch.nn as nn
 from sklearn.metrics import roc_auc_score, f1_score, accuracy_score
 import numpy as np
 
@@ -33,14 +34,21 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
         losses_Con = AverageMeter()
     end = time.time()
 
+    if opt.source_sampling is not None:
+        soft = nn.Softmax(dim=1)
+        sig = nn.Sigmoid()
+        image_indices_list = []
+        confidence_list = []
+        target_sim_list = []
+
     for idx, samples in enumerate(trainloader):
         if opt.sampling == 'domainKang':
-            images, labels, domain_tags = samples
+            images, labels, domain_tags, image_indices = samples
         else:
             images, labels = samples
 
         third = len(trainloader)//3
-        if idx % third == 0:
+        if third !=0 and idx % third == 0:
             print(f'{idx}/{len(trainloader)}', end = ' ')
 
         data_time.update(time.time() - end)
@@ -81,7 +89,11 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
 
 
             # compute loss
-            features, output = model(images)
+            if 'target_sim' in opt.source_sampling:
+                features, output, domain_logit = model(images)
+            else:
+                features, output = model(images)
+
             if opt.one_crop:
                 features_T = features.unsqueeze(1)
             else:
@@ -90,6 +102,30 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
             
             loss_Con = criterion['Con'](features_T, labels)
             loss_CE = criterion['CE'](output, labels_aug)
+            if 'target_sim' in opt.source_sampling:
+                domain_logit1, domain_logit2 = domain_logit.chunk(2)
+                averaged_domain_logit = (domain_logit1 + domain_logit2)/2
+                domain_confidence = sig(averaged_domain_logit)
+                loss_domain = criterion['Domain'](domain_confidence.squeeze(1), domain_tags.type(torch.FloatTensor).cuda(non_blocking=True))
+
+                # get indices and confidences only for source
+                domain_confidence = [ conf.item() for conf_idx, conf in enumerate(domain_confidence) if domain_tags[conf_idx]==1 ]
+                image_indices =  [image_idx.item() for ii, image_idx in enumerate(image_indices) if domain_tags[ii]==1]
+                confidence_list.extend(domain_confidence) ## FIXME
+                image_indices_list.extend(image_indices)
+
+            if 'easy' in opt.source_sampling or 'hard' in opt.source_sampling:
+                probs = soft(output) # 2*BS,2
+                probs0, probs1 = probs.chunk(2)
+                averaged_probs = (probs0 + probs1)/2 # BS,2
+                confidence = [max(avg_prob).item() for avg_prob in averaged_probs]
+
+                # get indices and confidences only for source
+                confidence = [ conf for conf_idx, conf in enumerate(confidence) if domain_tags[conf_idx]==1 ]
+                image_indices =  [image_idx.item() for ii, image_idx in enumerate(image_indices) if domain_tags[ii]==1]
+                confidence_list.extend(confidence)
+                image_indices_list.extend(image_indices)
+
         else:
             raise ValueError("check method")  
 
@@ -107,6 +143,8 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
         total_loss = loss_CE
         if opt.method == 'Joint_Con':
             total_loss = total_loss + loss_Con *opt.l_con
+            if 'target_sim' in opt.source_sampling:
+                total_loss += loss_domain
         total_loss.backward()
         optimizer.step()
 
@@ -124,12 +162,33 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
                    epoch, idx + 1, len(trainloader), batch_time=batch_time,
                    data_time=data_time, loss=losses_CE))
             sys.stdout.flush()
+
+
     if opt.method == 'Joint_Con':
-        return {'CE':losses_CE.avg, 'Con': losses_Con.avg}, top1.avg
+        if opt.source_sampling is not None:
+            conf_image_idx_list = [[conf, ii] for conf, ii in zip(confidence_list, image_indices_list) ]
+            conf_image_idx_list.sort(key= lambda x: x[0])
+            half_source_size = len(conf_image_idx_list)//2
+            if opt.source_sampling == 'easy':
+                conf_image_idx_list = conf_image_idx_list[half_source_size:]
+            elif opt.source_sampling == 'hard':
+                conf_image_idx_list = conf_image_idx_list[:half_source_size]
+            elif opt.source_sampling == 'target_sim': ## FIXME
+                conf_image_idx_list = conf_image_idx_list[:half_source_size]
+
+            image_indices_list = [ii for _, ii in conf_image_idx_list]
+            
+            return {'CE':losses_CE.avg, 'Con': losses_Con.avg}, top1.avg, image_indices_list
+
+
+        else:
+            return {'CE':losses_CE.avg, 'Con': losses_Con.avg}, top1.avg
     elif 'CE' in opt.method:
         return losses_CE.avg, top1.avg
     else:
         raise ValueError("check method")  
+
+
 
 def train_sampling(trainloader, model, criterion, optimizer, epoch, opt):
     """one epoch training"""
@@ -481,19 +540,7 @@ def test(test_loader, model,  opt, metric=None, best_th = None):
     gts = []
 
     if best_th is None:
-        if metric == 'auc':
-            pretrained_dict = torch.load(os.path.join(
-                    opt.save_folder, 'auc_best.pth'))['model']
-            model.load_state_dict(pretrained_dict)
-        elif metric == 'acc':
-            pretrained_dict = torch.load(os.path.join(
-                    opt.save_folder, 'acc05_best.pth'))['model']
-            model.load_state_dict(pretrained_dict)
-        elif metric == 'f1':
-            pretrained_dict = torch.load(os.path.join(
-                    opt.save_folder, 'f1_best.pth'))['model']
-            model.load_state_dict(pretrained_dict)
-        elif metric == 'last':
+        if metric == 'last':
             pretrained_dict = torch.load(os.path.join(
                     opt.save_folder, 'last.pth'))['model']
             model.load_state_dict(pretrained_dict)
@@ -537,10 +584,12 @@ def test(test_loader, model,  opt, metric=None, best_th = None):
         elif metric == 'f1':
             return f1_score(gts, probs>=0.5)
         elif metric == 'last':
+
+
             auc = roc_auc_score(gts, probs)
             acc = accuracy_score(gts, probs>=0.5)
             f1 = f1_score(gts, probs>=0.5)
-            return auc, acc, f1
+            return auc, acc, f1, probs, gts
             
         else:
             raise ValueError("unsupported metric")

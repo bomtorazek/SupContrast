@@ -4,6 +4,7 @@ ImageNet-Style ResNet
     Deep Residual Learning for Image Recognition. arXiv:1512.03385
 Adapted from: https://github.com/bearpaw/pytorch-classification
 """
+from turtle import forward
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -26,7 +27,6 @@ def resnet50(**kwargs):
 
 def resnet101(**kwargs):
     return models.resnet101(pretrained=True)
- 
 
 model_dict = {
     'resnet18': [resnet18, 512],
@@ -92,7 +92,43 @@ class SupHybResNet(nn.Module):
         feat = F.normalize(self.head(feat), dim=1)
         return feat, fc
         
+class SupHybResNet2(nn.Module):
+    """backbone + projection head"""
+    def __init__(self, name='resnet50', head='mlp', feat_dim=128, num_classes=2):
+        super(SupHybResNet2, self).__init__()
+        model_fun, dim_in = model_dict[name]
+        self.encoder = model_fun()
+        self.encoder.fc = Identity()
+        self.head = nn.Sequential(
+            nn.Linear(dim_in, dim_in),
+            nn.ReLU(inplace=True),
+            nn.Linear(dim_in, feat_dim)
+        )
+        self.head_domain = nn.Sequential(
+            nn.Linear(dim_in, dim_in),
+            nn.ReLU(inplace=True),
+            nn.Linear(dim_in, 1)
+        )
+        
+        self.fc = nn.Linear(dim_in, num_classes)
 
+
+    def forward(self, x):
+        feat = self.encoder(x)
+        fc = self.fc(feat) # feat.detach()
+        feature = F.normalize(self.head(feat), dim=1)
+        domain_logit = self.head_domain(feat)
+        return feature, fc, domain_logit
+
+
+class MobileNetV2(nn.Module):
+    def __init__(self, num_classes=2):
+        super(MobileNetV2, self).__init__()
+        self.model = models.mobilenet_v2(pretrained=True)
+        self.model.classifier[1] =nn.Linear(self.model.last_channel, num_classes)
+    
+    def forward(self, x):
+        return self.model(x)
 
 class SupCEResNet(nn.Module):
     """encoder + classifier"""

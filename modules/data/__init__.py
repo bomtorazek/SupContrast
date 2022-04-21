@@ -1,14 +1,16 @@
 import os.path as osp
+from os import listdir
+import random
 from math import ceil
-from torch.utils.data.sampler import WeightedRandomSampler
 
+from torch.utils.data.sampler import WeightedRandomSampler
 from torchvision import transforms
 import torch
 import numpy as np
 
 from torchsampler import ImbalancedDatasetSampler, WeightedSampler, DomainWeightedSampler
 from modules.data.transform import TwoCropTransform, get_transform
-from modules.data.dataset import GeneralDataset, ClassBalancedDataset
+from modules.data.dataset import GeneralDataset, ClassBalancedDataset, MVTECDataset
 
 
 
@@ -38,10 +40,14 @@ def load_image_names(data_dir, util_rate, opt):
             train_names = train_names + val_names
             val_names = None
 
-        if util_rate < 1:
+        if util_rate < 1.0:
             num_used = int(len(train_names) * util_rate)
-            np.random.seed(1)
-            train_names = np.random.choice(train_names, size=num_used, replace=False)  
+            random.seed(1)
+            random.shuffle(train_names)
+            train_names = train_names[:num_used]
+
+            # np.random.seed(1)
+            # train_names = np.random.choice(train_names, size=num_used, replace=False)  
 
     with open(osp.join(imageset_dir, 'test.{}.txt'.format(opt.test_fold)), 'r') as fid:
         temp = fid.read()
@@ -50,6 +56,43 @@ def load_image_names(data_dir, util_rate, opt):
     return train_names, val_names, test_names
 
 
+
+
+def load_image_names_MVTEC(data_dir):
+    train_dir = osp.join(data_dir, 'train', 'good')
+    test_dir = osp.join(data_dir, 'test')
+    
+    train_OK = []
+    test_NG = []
+    test_OK = []
+
+    for img in listdir(train_dir):
+        img_dir = osp.join(train_dir, img)
+        train_OK.append( (img_dir, 0))
+
+    for folder in listdir(test_dir):
+        for img in listdir(osp.join(test_dir, folder)):
+            img_dir = osp.join(test_dir, folder, img)
+            if folder != 'good':
+                test_NG.append( (img_dir,1))
+            else:
+                test_OK.append( (img_dir,0) )
+
+    random.seed(1)
+    random.shuffle(test_NG)
+    len_test_NG = len(test_NG)
+    ratio =int(len_test_NG * 0.8)
+    train_NG = test_NG[:ratio]
+    test_NG = test_NG[ratio:]
+    test_image = test_NG + test_OK
+    train_image = train_OK + train_NG
+
+    print( len(train_OK), 'train_OK')
+    print( len(train_NG), 'train_NG')
+    print( len(test_OK), 'test_OK')
+    print( len(test_NG), 'test_NG')
+
+    return train_image, None, test_image
 
 
 def set_loader(opt):
@@ -71,7 +114,10 @@ def set_loader(opt):
 
     
     ##----------Dataset----------##
-    train_names_T, val_names_T, test_names_T = load_image_names(opt.target_folder, opt.train_util_rate,opt)
+    if "MVTEC" in opt.dataset:
+        train_names_T, val_names_T, test_names_T = load_image_names_MVTEC(opt.target_folder)
+    else:
+        train_names_T, val_names_T, test_names_T = load_image_names(opt.target_folder, opt.train_util_rate,opt)
     print(f"# of target trainset:{len(train_names_T)}")
     if 'Joint' in opt.method:
         train_names_S, _, _ = load_image_names(opt.source_folder, 1.0, opt)
@@ -81,9 +127,9 @@ def set_loader(opt):
             use_domain_tag = (opt.sampling == 'domainKang')
             train_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=train_names_T,
                                             ext_data_dir=opt.source_folder, ext_image_names=train_names_S,
-                                            transform=train_transform, use_domain_tag=use_domain_tag)
-    
-            
+                                            transform=train_transform, \
+                                            use_domain_tag=use_domain_tag, source_sampling=opt.source_sampling)
+ 
         else:
             Dataset = ClassBalancedDataset if opt.class_balanced else GeneralDataset
 
@@ -93,7 +139,10 @@ def set_loader(opt):
                     transform=train_transform)
 
     else:
-        train_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=train_names_T,
+        if "MVTEC" in opt.dataset:
+            train_dataset = MVTECDataset(train_names_T,transform=train_transform)
+        else:
+            train_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=train_names_T,
                                     transform=train_transform)
 
     if not opt.whole_data_train:
@@ -101,11 +150,13 @@ def set_loader(opt):
                                             transform=val_transform,) 
         print(f"# of target valset:{len(val_names_T)}")
 
-
-    test_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=test_names_T,
+    if "MVTEC" in opt.dataset:
+        test_dataset = MVTECDataset(test_names_T,transform=test_transform)
+    else:
+        test_dataset = GeneralDataset(data_dir=opt.target_folder, image_names=test_names_T,
                                     transform=test_transform)
     print(f"# of target testset:{len(test_names_T)}")
-        
+    
     ##----------Dataloader----------##
     # It seems that incosistent batch size harms contrastive learning, so drop the last batch
     if opt.sampling == 'unbalanced':
@@ -179,6 +230,7 @@ def adjust_domain_weight(opt, num_T, num_S, epoch):
     """
     Assume that the number of target images is less than source images by default.
     """
+    num_S = int(num_S * opt.source_rate)
     first_BS_T = ceil(opt.batch_size * num_T/(num_T + num_S))
     last_BS_T = opt.batch_size // 2
 

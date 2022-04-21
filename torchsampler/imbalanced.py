@@ -89,25 +89,29 @@ class DomainWeightedSampler(torch.utils.data.Sampler):
         self.datapoints = datapoints
         self.num_domains = num_domains
         self.weights = self.get_weights(weights, num_domains)
-        self.subsets = self.datapoints.domain_subsets
-        self.weighted_subset_sizes = self.get_weighted_subset_sizes(self.weights, self.subsets)
+        self.origin_subsets = self.datapoints.domain_subsets
+        self.weighted_subset_sizes = self.get_weighted_subset_sizes(self.weights, self.origin_subsets)
 
     def __iter__(self):
-        print(self.weighted_subset_sizes)
+        print("weighted_subset_sizes (T:S) ->", self.weighted_subset_sizes)
         domain_indices = [None]* self.num_domains
         for domain, weighted_subset_size in enumerate(self.weighted_subset_sizes):
             domain_indices[domain] = shuffle(self.sample_subset(domain, weighted_subset_size))
-        
+            # dataset indices for each domain
+
+        # interweaving target and source w.r.t weights
+        # e.g) 2:1 -> TTSTTS....
         domain_pointer, total_pointer = [0]*self.num_domains, 0
-        max_unit = self.weighted_subset_sizes[0]//self.weights[0]
-        indices = np.array([0]* (max_unit * sum(self.weights)))
-        for _ in range(max_unit):
+        indices = np.array([0]* (self.max_unit * sum(self.weights)))
+        for _ in range(self.max_unit):
             for domain in range(self.num_domains):
                 d_weight = self.weights[domain]
                 indices[total_pointer: total_pointer + d_weight] = domain_indices[domain][domain_pointer[domain]: domain_pointer[domain]+ d_weight]
                 domain_pointer[domain]+= d_weight
                 total_pointer += d_weight
-
+        
+        assert total_pointer == len(indices) # FIXME
+        
         return iter(indices)
 
     def __len__(self):
@@ -132,8 +136,8 @@ class DomainWeightedSampler(torch.utils.data.Sampler):
                 )  # [(397,3), (64,1)]
             )  # [133, 64] == [# of target // target weight, # of source // source weight]
         )
-        max_unit = max(reduced_subset_sizes)  # 133
-        units = [ max_unit if size != 0 else 0 for size in reduced_subset_sizes ]
+        self.max_unit = max(reduced_subset_sizes)  # 133
+        units = [ self.max_unit if size != 0 else 0 for size in reduced_subset_sizes ]
         return [ int(np.round(w * u)) for w, u in zip(weights, units) ] # 399, 133
 
     def sample_subset(self, domain, weighted_subset_size):
@@ -149,9 +153,24 @@ class DomainWeightedSampler(torch.utils.data.Sampler):
         r = weighted_subset_size % subset_size
         return q * subset + np.random.choice(subset, r, replace=False).tolist()
     
-    def apply_domain_weight(self, domain_weight):
+    def apply_domain_weight(self, domain_weight, source_rate, image_indices_list):
         self.weights = domain_weight
         print(self.weights)
+        if self.num_domains != 2:
+            raise NotImplementedError("domain warmup batchsize is currently supported for only two domains")
+        
+        if source_rate < 1.0:
+            if image_indices_list is None: # random sampling
+                self.subsets = [self.origin_subsets[0], random.sample(self.origin_subsets[1], int(len(self.origin_subsets[1])*source_rate))]
+            else:
+                to_sample_source_size = int(len(self.origin_subsets[1])*source_rate)
+                sampled_source_size = len(image_indices_list) 
+                remain_sample_size = max(to_sample_source_size - sampled_source_size, 0)
+                source_subset = random.sample(self.origin_subsets[1], remain_sample_size) + image_indices_list
+                self.subsets = [self.origin_subsets[0], source_subset]
+
+        else: 
+            self.subsets = self.origin_subsets 
         self.weighted_subset_sizes = self.get_weighted_subset_sizes(self.weights, self.subsets)
         
 

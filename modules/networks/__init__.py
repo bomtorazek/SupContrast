@@ -1,20 +1,30 @@
+from re import M
 import torch
 import torch.backends.cudnn as cudnn
 
-from modules.networks.resnet_big import SupHybResNet, SupCEResNet
+from modules.networks.resnet_big import SupHybResNet, SupCEResNet, SupHybResNet2, MobileNetV2
 from modules.runner.losses import SupConLoss
 
 
 def set_model(opt):
 
     if opt.method == 'Joint_Con':
-        model = SupHybResNet(name=opt.model, feat_dim=opt.feat_dim,num_classes=opt.num_cls) 
         criterion = {}
         criterion['Con'] = SupConLoss(temperature=opt.temp, 
                                     loss_type=opt.loss_type)
         criterion['CE'] = torch.nn.CrossEntropyLoss() 
+
+        if 'target_sim' in opt.source_sampling:
+            model = SupHybResNet2(name=opt.model, feat_dim=opt.feat_dim,num_classes=opt.num_cls)
+            criterion['Domain'] = torch.nn.BCELoss()
+        else:
+            model = SupHybResNet(name=opt.model, feat_dim=opt.feat_dim,num_classes=opt.num_cls) 
+
     elif 'CE' in opt.method:
-        model = SupCEResNet(name=opt.model, num_classes=opt.num_cls)
+        if 'mobile' in opt.model:
+            model = MobileNetV2(num_classes=opt.num_cls)
+        else:
+            model = SupCEResNet(name=opt.model, num_classes=opt.num_cls)
         criterion = torch.nn.CrossEntropyLoss()
     else:
         raise NotImplementedError("unsupported method")

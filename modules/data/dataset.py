@@ -7,15 +7,34 @@ import torch
 import numpy as np
 from PIL import Image
 
+class MVTECDataset(torch.utils.data.Dataset):
+    def __init__(self,image_names, transform=None ):
+        self.image_names = image_names
+        self.transform = transform
+    
+    def __len__(self):
+        return len(self.image_names)
+    def __getitem__(self, index):
+        image_path, label = self.image_names[index]
+        img = (Image.open(image_path))
+        img = img.convert('RGB')
+        if self.transform is not None:
+            image = self.transform(img)
+    
+        return image, label
+
+
 
 class GeneralDataset(torch.utils.data.Dataset):
-    def __init__(self, data_dir,image_names, ext_data_dir=None, ext_image_names=None, transform=None, use_domain_tag=False):
+    def __init__(self, data_dir,image_names, ext_data_dir=None, ext_image_names=None, transform=None, \
+                use_domain_tag=False, source_sampling=None):
         self._data_dir = data_dir
         self._transform = transform
         self._image_names = image_names
         self._ext_data_dir = ext_data_dir
         self._ext_image_names = ext_image_names 
         self.use_domain_tag = use_domain_tag
+        self.source_sampling = source_sampling
         
         anno_fname = 'single_image.2class.json'
         self._anno_json = json.load(open(osp.join(data_dir, 'annotation', anno_fname), 'r'))
@@ -73,7 +92,10 @@ class GeneralDataset(torch.utils.data.Dataset):
             image = self._transform(img)
 
         if self.use_domain_tag:
-            return image, self._labels[index], self.domain_tags[index]
+            if self.source_sampling is not None:             
+                return image, self._labels[index], self.domain_tags[index], index
+            else:
+                return image, self._labels[index], self.domain_tags[index]
         else:
             return image, self._labels[index]
     

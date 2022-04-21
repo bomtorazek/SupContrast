@@ -56,6 +56,8 @@ def parse_option():
     parser.add_argument('--ur_seed', type=int, default = 100, help='seed for ur_from_imageset')
     parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop or Resize')
     parser.add_argument('--sampling', type=str, default='unbalanced', choices=['unbalanced','balanced','warmup','warmIDS', 'warmKang', 'domainKang'])
+    parser.add_argument('--source_rate', type=float, default=1.0)
+    parser.add_argument('--source_sampling', type=str, default='easy', choices=['easy', 'hard', 'target_sim', 'easy+target_sim', 'hard+target_sim'])
     parser.add_argument('--class_balanced', action='store_true', default =False, help='use class-balanced dataset')
 
     # method
@@ -165,6 +167,14 @@ def parse_option():
     if 'Con' in opt.method:
         opt.model_name += '_' + opt.loss_type + '_lambda' + str(opt.l_con)  + '_'
     opt.model_name += '_sampling_'+ opt.sampling 
+    
+    if opt.source_rate < 1.0:
+        opt.model_name += '_source_' + str(opt.source_rate)
+        opt.model_name += '_' + opt.source_sampling
+        if opt.sampling != 'domainKang' or opt.loss_type != 'SupCon':
+            raise NotImplementedError("source_sampling is supported only for domainKang + JointSupCon")
+    else:
+        opt.source_sampling = None
 
     if opt.sampling != 'unbalanced':
         if len(opt.gpu) > 1: #FIXME
