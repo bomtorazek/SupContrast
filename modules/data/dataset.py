@@ -27,7 +27,7 @@ class MVTECDataset(torch.utils.data.Dataset):
 
 class GeneralDataset(torch.utils.data.Dataset):
     def __init__(self, data_dir,image_names, ext_data_dir=None, ext_image_names=None, transform=None, \
-                use_domain_tag=False, source_sampling=None):
+                use_domain_tag=False, source_sampling=None, opt=None):
         self._data_dir = data_dir
         self._transform = transform
         self._image_names = image_names
@@ -40,12 +40,21 @@ class GeneralDataset(torch.utils.data.Dataset):
         self._anno_json = json.load(open(osp.join(data_dir, 'annotation', anno_fname), 'r'))
 
         self._image_fpaths, self._labels = [], []
-        for image_name in self._image_names:
-            image_fpath = osp.join(data_dir, 'image', image_name)
-            label = self._anno_json['single_image'][image_name]['class'][0]
 
-            self._image_fpaths.append(image_fpath)
-            self._labels.append(label)
+        if 'd_sub' in opt.dataset:
+            for image_name in self._image_names:
+                image_fpath = osp.join(data_dir, 'image', image_name)
+                label = self._anno_json['label'][image_name]
+                self._image_fpaths.append(image_fpath)
+                self._labels.append(label)
+
+        else:
+            for image_name in self._image_names:
+                image_fpath = osp.join(data_dir, 'image', image_name)
+                label = self._anno_json['single_image'][image_name]['class'][0]
+
+                self._image_fpaths.append(image_fpath)
+                self._labels.append(label)
         
         if use_domain_tag: # target is zero
             self.domain_tags = [0]*len(self._image_fpaths)
@@ -53,12 +62,21 @@ class GeneralDataset(torch.utils.data.Dataset):
 
         if self._ext_data_dir is not None:
             self._ext_anno_json = json.load(open(osp.join(ext_data_dir, 'annotation', anno_fname), 'r'))
-            for image_name in self._ext_image_names:
-                image_fpath = osp.join(ext_data_dir, 'image', image_name)
-                label = self._ext_anno_json['single_image'][image_name]['class'][0]
+            
+            if 'd_sub' in opt.dataset:
+                for image_name in self._ext_image_names:
+                    image_fpath = osp.join(ext_data_dir, 'image', image_name)
+                    label = self._ext_anno_json['label'][image_name]
+                    self._image_fpaths.append(image_fpath)
+                    self._labels.append(label)
+            else:                
+                for image_name in self._ext_image_names:
+                    image_fpath = osp.join(ext_data_dir, 'image', image_name)
+                    label = self._ext_anno_json['single_image'][image_name]['class'][0]
 
-                self._image_fpaths.append(image_fpath)
-                self._labels.append(label)
+                    self._image_fpaths.append(image_fpath)
+                    self._labels.append(label)
+                    
             if use_domain_tag:
                 self.source_size = len(self._image_fpaths) - self.target_size
                 self.domain_tags += [1]*self.source_size # source is one

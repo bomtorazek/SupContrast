@@ -2,6 +2,7 @@ import time
 import sys, os
 
 import torch
+import clip
 from torch.nn.functional import normalize
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score, f1_score, accuracy_score
@@ -55,6 +56,8 @@ def train(trainloader, model, criterion, optimizer, epoch, opt):
         bsz = labels.shape[0]
 
         if 'CE' in opt.method:
+            if 'CLIP' in opt.model:
+                clip.model.convert_weights(model.encoder)
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
 

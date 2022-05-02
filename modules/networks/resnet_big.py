@@ -4,12 +4,14 @@ ImageNet-Style ResNet
     Deep Residual Learning for Image Recognition. arXiv:1512.03385
 Adapted from: https://github.com/bearpaw/pytorch-classification
 """
+from multiprocessing.sharedctypes import Value
 from turtle import forward
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import models
+import clip
 
+from torchvision import models
 from modules.networks.resnet_dsbn import resnet18dsbn, resnet34dsbn, resnet50dsbn, resnet101dsbn
 
 
@@ -144,6 +146,31 @@ class SupCEResNet(nn.Module):
             return self.fc(self.encoder(x, domain_idx))
         else:
             return self.fc(self.encoder(x))
+
+
+class CLIPResNet(nn.Module):
+    """encoder + classifier"""
+    def __init__(self, training='fc', num_classes=2):
+        super(CLIPResNet, self).__init__()
+        self.encoder, self.preprocess = clip.load('RN50')
+        self.fc = nn.Linear(1024, num_classes)
+        self.train_method = training
+
+    def convert_models_to_fp32(self, model): 
+        for p in model.parameters():
+            p.data = p.data.float()
+            if p.grad is not None: ## 
+                p.grad.data = p.grad.data.float() 
+
+    def forward(self, x):
+        self.convert_models_to_fp32(self.encoder)
+        features = self.encoder.encode_image(x) # BS, 1024
+        if self.train_method == 'fc':
+            return self.fc( features.detach())
+        elif self.train_method == 'full': 
+            return self.fc( features)
+        else:
+            raise ValueError("Invalid training method")
 
 
 class LinearClassifier(nn.Module):

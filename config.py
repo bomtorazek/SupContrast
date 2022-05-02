@@ -36,7 +36,7 @@ def parse_option():
                         help='momentum')
 
     # network
-    parser.add_argument('--model', type=str, default='resnet18')
+    parser.add_argument('--model', type=str, default='resnet50')
     parser.add_argument('--num_cls', type=int, default=2)
     parser.add_argument('--model_transfer', type=str, default=None)
   

@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch
 from torchvision import transforms
 import numpy as np
+import PIL
 
 from modules.data.aug_lib import TrivialAugment
 from modules.data.RandAugment import rand_augment_transform
@@ -60,11 +61,14 @@ class GaussianBlur(object):
 def get_transform(opt, mean, std, scale):
 
     normalize = transforms.Normalize(mean=mean, std=std)
-    if opt.aug.lower() == 'nothing':
+    if opt.aug.lower() == 'nothing': ## CLIP
+        mean = (0.48145466, 0.4578275, 0.40821073)
+        std = (0.26862954, 0.26130258, 0.27577711)
         TF = transforms.Compose([
-            transforms.Resize(opt.size),
+            transforms.Resize(opt.size, interpolation=PIL.Image.BICUBIC),
+            transforms.CenterCrop(size=(opt.size, opt.size)),
             transforms.ToTensor(),
-            normalize,
+            transforms.Normalize(mean=mean, std=std),
     ])
     elif opt.aug.lower() == 'flip':
         TF = transforms.Compose([

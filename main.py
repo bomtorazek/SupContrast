@@ -4,6 +4,7 @@ import os
 import time
 
 import tensorboard_logger as tb_logger
+import torch
 
 from util import adjust_learning_rate
 from util import set_optimizer
@@ -18,7 +19,7 @@ from config import parse_option
 def main():
     opt = parse_option()
     os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
-
+    
     if not opt.whole_data_train:
         best_auc = 0.0
         best_acc05 =0.0
@@ -26,11 +27,11 @@ def main():
         best_epoch = 0
         best_f1 = 0.0
 
-    # build data loader
-    loaders = set_loader(opt) # tuple or dict
-
     # build model and criterion
-    model, criterion = set_model(opt)
+    model, criterion, preprocess = set_model(opt)
+
+    # build data loader
+    loaders = set_loader(opt, preprocess) # tuple or dict
 
     # build optimizer
     optimizer = set_optimizer(opt, model)
